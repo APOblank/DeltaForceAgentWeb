@@ -1,0 +1,52 @@
+[
+  {
+    "name": "PKM通用机枪",
+    "current_price": 112473,
+    "combat_price": 113464
+  },
+  {
+    "name": "沙漠之鹰",
+    "current_price": 15200,
+    "combat_price": 16161
+  },
+  {
+    "name": "M1014霰弹枪",
+    "current_price": 26588,
+    "combat_price": 26831
+  },
+  {
+    "name": "QSZ92G",
+    "current_price": 4800,
+    "combat_price": 4727
+  },
+  {
+    "name": "G17",
+    "current_price": 4800,
+    "combat_price": 4715
+  },
+  {
+    "name": "SR9射手步枪",
+    "current_price": 10800,
+    "combat_price": 10644
+  },
+  {
+    "name": "M870霰弹枪",
+    "current_price": 5000,
+    "combat_price": 4746
+  },
+  {
+    "name": "AKS-74U突击步枪",
+    "current_price": 12058,
+    "combat_price": 11789
+  },
+  {
+    "name": "UZI冲锋枪",
+    "current_price": 12055,
+    "combat_price": 11750
+  },
+  {
+    "name": "725双管霰弹枪",
+    "current_price": 31915,
+    "combat_price": 31558
+  }
+]

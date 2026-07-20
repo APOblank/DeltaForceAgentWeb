@@ -1,0 +1,15 @@
+# Build and local dependency caches
+target/
+.m2/
+.restore-check/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local runtime configuration
+application-local.yml
+.env

@@ -1,0 +1,332 @@
+[
+  {
+    "name": "PKM通用机枪",
+    "current_price": 112473,
+    "combat_price": 113464
+  },
+  {
+    "name": "沙漠之鹰",
+    "current_price": 15200,
+    "combat_price": 16161
+  },
+  {
+    "name": "M1014霰弹枪",
+    "current_price": 26588,
+    "combat_price": 26831
+  },
+  {
+    "name": "QSZ92G",
+    "current_price": 4800,
+    "combat_price": 4727
+  },
+  {
+    "name": "G17",
+    "current_price": 4800,
+    "combat_price": 4715
+  },
+  {
+    "name": "SR9射手步枪",
+    "current_price": 10800,
+    "combat_price": 10644
+  },
+  {
+    "name": "M870霰弹枪",
+    "current_price": 5000,
+    "combat_price": 4746
+  },
+  {
+    "name": "AKS-74U突击步枪",
+    "current_price": 12058,
+    "combat_price": 11789
+  },
+  {
+    "name": "UZI冲锋枪",
+    "current_price": 12055,
+    "combat_price": 11750
+  },
+  {
+    "name": "725双管霰弹枪",
+    "current_price": 31915,
+    "combat_price": 31558
+  },
+  {
+    "name": "野牛冲锋枪",
+    "current_price": 12101,
+    "combat_price": 11716
+  },
+  {
+    "name": ".357左轮",
+    "current_price": 13900,
+    "combat_price": 13435
+  },
+  {
+    "name": "CAR-15突击步枪",
+    "current_price": 12304,
+    "combat_price": 11800
+  },
+  {
+    "name": "M16A4突击步枪",
+    "current_price": 12295,
+    "combat_price": 11721
+  },
+  {
+    "name": "M1911",
+    "current_price": 17640,
+    "combat_price": 16854
+  },
+  {
+    "name": "G18",
+    "current_price": 19395,
+    "combat_price": 18548
+  },
+  {
+    "name": "Mini-14射手步枪",
+    "current_price": 39093,
+    "combat_price": 38153
+  },
+  {
+    "name": "K416突击步枪",
+    "current_price": 153894,
+    "combat_price": 152939
+  },
+  {
+    "name": "VSS射手步枪",
+    "current_price": 48488,
+    "combat_price": 47014
+  },
+  {
+    "name": "93R",
+    "current_price": 18085,
+    "combat_price": 15534
+  },
+  {
+    "name": "AKM突击步枪",
+    "current_price": 141212,
+    "combat_price": 138155
+  },
+  {
+    "name": "S12K霰弹枪",
+    "current_price": 42155,
+    "combat_price": 38908
+  },
+  {
+    "name": "MP5冲锋枪",
+    "current_price": 52292,
+    "combat_price": 48636
+  },
+  {
+    "name": "G3战斗步枪",
+    "current_price": 53142,
+    "combat_price": 49258
+  },
+  {
+    "name": "SKS射手步枪",
+    "current_price": 48510,
+    "combat_price": 44448
+  },
+  {
+    "name": "QJB201轻机枪",
+    "current_price": 118553,
+    "combat_price": 114361
+  },
+  {
+    "name": "SVCH精确射手步枪",
+    "current_price": 161318,
+    "combat_price": 156511
+  },
+  {
+    "name": "P90冲锋枪",
+    "current_price": 100605,
+    "combat_price": 95413
+  },
+  {
+    "name": "QBZ95-1突击步枪",
+    "current_price": 46618,
+    "combat_price": 40866
+  },
+  {
+    "name": "SR-3M紧凑突击步枪",
+    "current_price": 118113,
+    "combat_price": 112355
+  },
+  {
+    "name": "K437突击步枪",
+    "current_price": 122839,
+    "combat_price": 116980
+  },
+  {
+    "name": "勇士冲锋枪",
+    "current_price": 51760,
+    "combat_price": 45858
+  },
+  {
+    "name": "SMG-45冲锋枪",
+    "current_price": 57906,
+    "combat_price": 50285
+  },
+  {
+    "name": "AR57突击步枪",
+    "current_price": 175986,
+    "combat_price": 168094
+  },
+  {
+    "name": "AUG突击步枪",
+    "current_price": 134554,
+    "combat_price": 126421
+  },
+  {
+    "name": "M4A1突击步枪",
+    "current_price": 123763,
+    "combat_price": 114770
+  },
+  {
+    "name": "PTR-32突击步枪",
+    "current_price": 51998,
+    "combat_price": 42733
+  },
+  {
+    "name": "SG552突击步枪",
+    "current_price": 50014,
+    "combat_price": 40736
+  },
+  {
+    "name": "AK-12突击步枪",
+    "current_price": 123567,
+    "combat_price": 113677
+  },
+  {
+    "name": "PSG-1射手步枪",
+    "current_price": 118800,
+    "combat_price": 108492
+  },
+  {
+    "name": "FS-12霰弹枪",
+    "current_price": 77490,
+    "combat_price": 66448
+  },
+  {
+    "name": "SVD狙击步枪",
+    "current_price": 124200,
+    "combat_price": 112082
+  },
+  {
+    "name": "SV-98狙击步枪",
+    "current_price": 65335,
+    "combat_price": 51818
+  },
+  {
+    "name": "MK4冲锋枪",
+    "current_price": 96903,
+    "combat_price": 81088
+  },
+  {
+    "name": "ASh-12战斗步枪",
+    "current_price": 229336,
+    "combat_price": 212894
+  },
+  {
+    "name": "M14射手步枪",
+    "current_price": 179325,
+    "combat_price": 161667
+  },
+  {
+    "name": "复合弓",
+    "current_price": 123000,
+    "combat_price": 105160
+  },
+  {
+    "name": "腾龙突击步枪",
+    "current_price": 132197,
+    "combat_price": 114160
+  },
+  {
+    "name": "杠杆式步枪",
+    "current_price": 82055,
+    "combat_price": 63784
+  },
+  {
+    "name": "M700狙击步枪",
+    "current_price": 135000,
+    "combat_price": 116240
+  },
+  {
+    "name": "M249轻机枪",
+    "current_price": 100568,
+    "combat_price": 81639
+  },
+  {
+    "name": "MCX LT突击步枪",
+    "current_price": 100894,
+    "combat_price": 81741
+  },
+  {
+    "name": "SCAR-H战斗步枪",
+    "current_price": 117380,
+    "combat_price": 92565
+  },
+  {
+    "name": "M82狙击步枪",
+    "current_price": 237399,
+    "combat_price": 209336
+  },
+  {
+    "name": "R93狙击步枪",
+    "current_price": 141000,
+    "combat_price": 112377
+  },
+  {
+    "name": "MK47突击步枪",
+    "current_price": 175986,
+    "combat_price": 141965
+  },
+  {
+    "name": "KC17突击步枪",
+    "current_price": 199071,
+    "combat_price": 160510
+  },
+  {
+    "name": "M250通用机枪",
+    "current_price": 304569,
+    "combat_price": 263967
+  },
+  {
+    "name": "QCQ171冲锋枪",
+    "current_price": 151443,
+    "combat_price": 110254
+  },
+  {
+    "name": "MP7冲锋枪",
+    "current_price": 229450,
+    "combat_price": 182051
+  },
+  {
+    "name": "M7战斗步枪",
+    "current_price": 245774,
+    "combat_price": 193959
+  },
+  {
+    "name": "AS Val突击步枪",
+    "current_price": 246231,
+    "combat_price": 192594
+  },
+  {
+    "name": "SR-25射手步枪",
+    "current_price": 255008,
+    "combat_price": 192818
+  },
+  {
+    "name": "RM277突击步枪",
+    "current_price": 148215,
+    "combat_price": 74524
+  },
+  {
+    "name": "Vector冲锋枪",
+    "current_price": 271170,
+    "combat_price": 159251
+  },
+  {
+    "name": "AWM狙击步枪",
+    "current_price": 823579,
+    "combat_price": 700299
+  }
+]

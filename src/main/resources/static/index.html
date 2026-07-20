@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三角洲行动智能体</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#/">
+          <span class="brand-mark">Δ</span>
+          <span>
+            <strong>三角洲行动智能体</strong>
+            <small>Delta Force Agent</small>
+          </span>
+        </a>
+
+        <nav class="nav-list" aria-label="主导航">
+          <a class="nav-item" href="#/" data-route="/">
+            <span class="icon">⌂</span>
+            <span>首页</span>
+          </a>
+          <a class="nav-item" href="#/chat" data-route="/chat">
+            <span class="icon">●</span>
+            <span>智能对话</span>
+          </a>
+          <a class="nav-item" href="#/market" data-route="/market">
+            <span class="icon">↗</span>
+            <span>市场数据</span>
+          </a>
+          <a class="nav-item" href="#/gun-modifier" data-route="/gun-modifier">
+            <span class="icon">⌁</span>
+            <span>改枪台</span>
+          </a>
+          <a class="nav-item" href="#/knowledge" data-route="/knowledge">
+            <span class="icon">◎</span>
+            <span>图谱查询</span>
+          </a>
+          <a class="nav-item" href="#/readiness" data-route="/readiness">
+            <span class="icon">▣</span>
+            <span>卡战备</span>
+          </a>
+          <a class="nav-item" href="#/news" data-route="/news">
+            <span class="icon">◫</span>
+            <span>今日资讯</span>
+          </a>
+          <a class="nav-item" href="#/admin" data-route="/admin" hidden>
+            <span class="icon">▦</span>
+            <span>管理后台</span>
+          </a>
+        </nav>
+
+        <div class="sidebar-panel">
+          <div class="panel-label">系统状态</div>
+          <div class="status-row">
+            <span class="pulse"></span>
+            <span>Spring Boot / Neo4j</span>
+          </div>
+          <div class="mini-meter">
+            <span style="width: 82%"></span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button class="menu-button" type="button" aria-label="展开菜单">☰</button>
+          <div>
+            <div class="eyebrow">DELTA FORCE AI</div>
+            <h1 id="page-title">三角洲行动智能体</h1>
+          </div>
+          <div class="top-actions" id="top-actions"></div>
+        </header>
+
+        <section id="app-view" class="view"></section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

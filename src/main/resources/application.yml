@@ -1,0 +1,29 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: delta-force-agent-web
+  jackson:
+    default-property-inclusion: non_null
+
+delta-force:
+  fastapi:
+    base-url: ${DELTA_FORCE_HELPER_BASE_URL:http://127.0.0.1:8000}
+    api-key: ${DELTA_FORCE_HELPER_API_KEY:}
+    model: ${DELTA_FORCE_HELPER_MODEL:DF_agent}
+  realtime-data:
+    base-url: ${DELTA_FORCE_REALTIME_BASE_URL:http://127.0.0.1:8010}
+  neo4j:
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    user: ${NEO4J_USER:neo4j}
+    password: ${NEO4J_PASSWORD:}
+    database: ${NEO4J_DATABASE:sjzdata}
+    user-database: ${NEO4J_USER_DATABASE:deltaforceusers}
+  data:
+    firearms: classpath:data/orzice_firearms.json
+    attachments: classpath:data/orzice_attachments.json
+
+logging:
+  level:
+    com.deltaforce.agentweb: INFO

@@ -1005,6 +1005,33 @@ textarea {
   margin: 8px 0 0;
 }
 
+.conversation-status {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.conversation-status.awaiting_input {
+  color: #9a6700;
+  background: #fff3cd;
+}
+
+.conversation-status.completed {
+  color: #0f5132;
+  background: #dff6ed;
+}
+
+.conversation-status.cancelled,
+.conversation-status.failed {
+  color: #b42318;
+  background: #fee4e2;
+}
+
 .react-timeline {
   min-height: 0;
   overflow: auto;

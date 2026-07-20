@@ -5,6 +5,7 @@ public class ChatResponse {
     private String answer;
     private Object raw;
     private Object reactEvents;
+    private Object conversation;
     private String sessionId;
     private String messageId;
 
@@ -44,6 +45,14 @@ public class ChatResponse {
 
     public void setReactEvents(Object reactEvents) {
         this.reactEvents = reactEvents;
+    }
+
+    public Object getConversation() {
+        return conversation;
+    }
+
+    public void setConversation(Object conversation) {
+        this.conversation = conversation;
     }
 
     public String getSessionId() {

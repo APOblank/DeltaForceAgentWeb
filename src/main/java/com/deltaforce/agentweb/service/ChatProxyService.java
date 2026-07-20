@@ -34,8 +34,8 @@ public class ChatProxyService {
         this.objectMapper = objectMapper;
     }
 
-    public ChatResponse chat(String message, Boolean debug, Boolean reactEvents) {
-        Map<String, Object> payload = buildPayload(message, false, debug, reactEvents);
+    public ChatResponse chat(String message, Boolean debug, Boolean reactEvents, String userId, String sessionId, String messageId, String conversationMode) {
+        Map<String, Object> payload = buildPayload(message, false, debug, reactEvents, userId, sessionId, messageId, conversationMode);
         HttpHeaders headers = buildHeaders();
 
         String baseUrl = trimTrailingSlash(properties.getFastapi().getBaseUrl());
@@ -48,6 +48,10 @@ public class ChatProxyService {
             );
             ChatResponse response = new ChatResponse(extractAnswer(raw), raw);
             response.setReactEvents(raw == null ? null : raw.get("react_events"));
+            response.setConversation(raw == null ? null : raw.get("conversation"));
+            if (raw != null && raw.get("session_id") != null) {
+                response.setSessionId(String.valueOf(raw.get("session_id")));
+            }
             return response;
         } catch (RestClientException ex) {
             return new ChatResponse("FastAPI 智能体服务暂不可用，请确认 DeltaForceAgentHelper 已启动并监听 " + baseUrl + "。", null);
@@ -58,8 +62,8 @@ public class ChatProxyService {
         String onComplete(String answer, List<Map<String, Object>> reactEvents);
     }
 
-    public void streamChat(String message, Boolean debug, Boolean reactEvents, SseEmitter emitter, StreamCompleteHandler onComplete) {
-        Map<String, Object> payload = buildPayload(message, true, debug, reactEvents == null ? Boolean.TRUE : reactEvents);
+    public void streamChat(String message, Boolean debug, Boolean reactEvents, String userId, String sessionId, String messageId, String conversationMode, SseEmitter emitter, StreamCompleteHandler onComplete) {
+        Map<String, Object> payload = buildPayload(message, true, debug, reactEvents == null ? Boolean.TRUE : reactEvents, userId, sessionId, messageId, conversationMode);
         HttpHeaders headers = buildHeaders();
         String baseUrl = trimTrailingSlash(properties.getFastapi().getBaseUrl());
         StringBuilder answer = new StringBuilder();
@@ -112,7 +116,7 @@ public class ChatProxyService {
         }
     }
 
-    private Map<String, Object> buildPayload(String message, boolean stream, Boolean debug, Boolean reactEvents) {
+    private Map<String, Object> buildPayload(String message, boolean stream, Boolean debug, Boolean reactEvents, String userId, String sessionId, String messageId, String conversationMode) {
         Map<String, Object> payload = new HashMap<String, Object>();
         payload.put("model", properties.getFastapi().getModel());
         payload.put("stream", stream);
@@ -122,6 +126,16 @@ public class ChatProxyService {
         if (debug != null) {
             payload.put("debug", debug);
         }
+        if (StringUtils.hasText(userId)) {
+            payload.put("user", userId);
+        }
+        if (StringUtils.hasText(sessionId)) {
+            payload.put("session_id", sessionId);
+        }
+        if (StringUtils.hasText(messageId)) {
+            payload.put("message_id", messageId);
+        }
+        payload.put("conversation_mode", StringUtils.hasText(conversationMode) ? conversationMode : "auto");
 
         List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
         Map<String, Object> userMessage = new HashMap<String, Object>();

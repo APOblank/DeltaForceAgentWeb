@@ -22,6 +22,10 @@ delta-force:
     password: CHANGE_ME
     database: sjzdata
     user-database: deltaforceusers
+  security:
+    # 生产环境必须替换为至少 32 位的高强度随机密钥，并妥善保管。
+    jwt-secret: CHANGE_ME_TO_A_LONG_RANDOM_JWT_SECRET_32_CHARS
+    jwt-ttl-seconds: 86400
   data:
     firearms: classpath:data/orzice_firearms.json
     attachments: classpath:data/orzice_attachments.json

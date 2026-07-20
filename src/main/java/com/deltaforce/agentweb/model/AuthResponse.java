@@ -5,6 +5,8 @@ public class AuthResponse {
     private String userId;
     private String username;
     private String displayName;
+    private String token;
+    private long expiresIn;
 
     public AuthResponse() {
     }
@@ -38,4 +40,9 @@ public class AuthResponse {
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
     }
+
+    public String getToken() { return token; }
+    public void setToken(String token) { this.token = token; }
+    public long getExpiresIn() { return expiresIn; }
+    public void setExpiresIn(long expiresIn) { this.expiresIn = expiresIn; }
 }

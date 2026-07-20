@@ -11,6 +11,7 @@ public class AppProperties {
     private RealtimeData realtimeData = new RealtimeData();
     private Neo4j neo4j = new Neo4j();
     private Data data = new Data();
+    private Security security = new Security();
 
     public Fastapi getFastapi() {
         return fastapi;
@@ -42,6 +43,24 @@ public class AppProperties {
 
     public void setData(Data data) {
         this.data = data;
+    }
+
+    public Security getSecurity() {
+        return security;
+    }
+
+    public void setSecurity(Security security) {
+        this.security = security;
+    }
+
+    public static class Security {
+        private String jwtSecret;
+        private long jwtTtlSeconds = 86400;
+
+        public String getJwtSecret() { return jwtSecret; }
+        public void setJwtSecret(String jwtSecret) { this.jwtSecret = jwtSecret; }
+        public long getJwtTtlSeconds() { return jwtTtlSeconds; }
+        public void setJwtTtlSeconds(long jwtTtlSeconds) { this.jwtTtlSeconds = jwtTtlSeconds; }
     }
 
     public static class Fastapi {

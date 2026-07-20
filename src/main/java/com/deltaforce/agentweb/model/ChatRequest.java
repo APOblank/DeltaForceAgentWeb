@@ -8,8 +8,9 @@ public class ChatRequest {
     private String message;
     private Boolean debug;
     private Boolean reactEvents;
-    private String userId;
     private String sessionId;
+    private String messageId;
+    private String conversationMode;
 
     public String getMessage() {
         return message;
@@ -35,19 +36,27 @@ public class ChatRequest {
         this.reactEvents = reactEvents;
     }
 
-    public String getUserId() {
-        return userId;
-    }
-
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
-
     public String getSessionId() {
         return sessionId;
     }
 
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
+    }
+
+    public String getMessageId() {
+        return messageId;
+    }
+
+    public void setMessageId(String messageId) {
+        this.messageId = messageId;
+    }
+
+    public String getConversationMode() {
+        return conversationMode;
+    }
+
+    public void setConversationMode(String conversationMode) {
+        this.conversationMode = conversationMode;
     }
 }

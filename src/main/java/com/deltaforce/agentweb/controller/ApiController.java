@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.validation.Valid;
@@ -40,6 +42,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.UUID;
+import javax.servlet.http.HttpServletRequest;
+import com.deltaforce.agentweb.config.JwtAuthenticationInterceptor;
 
 @Validated
 @RestController
@@ -119,27 +124,27 @@ public class ApiController {
     }
 
     @GetMapping("/admin/users")
-    public List<Map<String, Object>> adminUsers(@RequestParam String adminUserId) {
-        adminService.requireAdmin(adminUserId);
+    public List<Map<String, Object>> adminUsers(HttpServletRequest request) {
+        adminService.requireAdmin(requireUser(request));
         return adminService.users();
     }
 
     @GetMapping("/admin/daily-content")
-    public Map<String, Object> adminDailyContent(@RequestParam String adminUserId) {
-        adminService.requireAdmin(adminUserId);
+    public Map<String, Object> adminDailyContent(HttpServletRequest request) {
+        adminService.requireAdmin(requireUser(request));
         return adminService.dailyContent();
     }
 
     @PostMapping("/admin/daily-content")
-    public Map<String, Object> saveAdminDailyContent(@RequestParam String adminUserId, @RequestBody Map<String, Object> content) {
-        adminService.requireAdmin(adminUserId);
+    public Map<String, Object> saveAdminDailyContent(HttpServletRequest request, @RequestBody Map<String, Object> content) {
+        adminService.requireAdmin(requireUser(request));
         return adminService.saveDailyContent(content);
     }
 
     @PostMapping("/admin/market/refresh")
-    public Map<String, Object> refreshMarket(@RequestParam String adminUserId, @RequestBody(required = false) Map<String, Object> request) {
-        adminService.requireAdmin(adminUserId);
-        return marketDataService.refresh(request);
+    public Map<String, Object> refreshMarket(HttpServletRequest request, @RequestBody(required = false) Map<String, Object> body) {
+        adminService.requireAdmin(requireUser(request));
+        return marketDataService.refresh(body);
     }
 
     @PostMapping("/gunsmith/recommend")
@@ -186,39 +191,44 @@ public class ApiController {
     }
 
     @PostMapping("/chat")
-    public ChatResponse chat(@Valid @RequestBody ChatRequest request) {
+    public ChatResponse chat(@Valid @RequestBody ChatRequest request, HttpServletRequest httpRequest) {
         String sessionId = null;
-        if (StringUtils.hasText(request.getUserId())) {
-            sessionId = chatHistoryService.ensureSession(request.getUserId(), request.getSessionId(), request.getMessage());
-            chatHistoryService.appendMessage(request.getUserId(), sessionId, "user", request.getMessage());
+        String messageId = StringUtils.hasText(request.getMessageId()) ? request.getMessageId() : UUID.randomUUID().toString();
+        String userId = optionalUser(httpRequest);
+        if (StringUtils.hasText(userId)) {
+            sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
+            chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
         }
-        ChatResponse response = chatProxyService.chat(request.getMessage(), request.getDebug(), request.getReactEvents());
-        response.setSessionId(sessionId);
-        if (StringUtils.hasText(request.getUserId()) && StringUtils.hasText(sessionId)) {
-            String assistantMessageId = chatHistoryService.appendMessage(request.getUserId(), sessionId, "assistant", response.getAnswer(), response.getReactEvents());
+        ChatResponse response = chatProxyService.chat(request.getMessage(), request.getDebug(), request.getReactEvents(), userId, sessionId, messageId, request.getConversationMode());
+        response.setSessionId(StringUtils.hasText(sessionId) ? sessionId : response.getSessionId());
+        if (StringUtils.hasText(userId) && StringUtils.hasText(sessionId)) {
+            String assistantMessageId = chatHistoryService.appendMessage(userId, sessionId, "assistant", response.getAnswer(), response.getReactEvents());
             response.setMessageId(assistantMessageId);
         }
         return response;
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(@Valid @RequestBody ChatRequest request) {
+    public SseEmitter chatStream(@Valid @RequestBody ChatRequest request, HttpServletRequest httpRequest) {
         SseEmitter emitter = new SseEmitter(0L);
         String sessionId = null;
-        if (StringUtils.hasText(request.getUserId())) {
-            sessionId = chatHistoryService.ensureSession(request.getUserId(), request.getSessionId(), request.getMessage());
-            chatHistoryService.appendMessage(request.getUserId(), sessionId, "user", request.getMessage());
+        String messageId = StringUtils.hasText(request.getMessageId()) ? request.getMessageId() : UUID.randomUUID().toString();
+        String userId = optionalUser(httpRequest);
+        if (StringUtils.hasText(userId)) {
+            sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
+            chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
         }
 
         final String finalSessionId = sessionId;
+        final String finalUserId = userId;
         chatStreamExecutor.execute(() -> {
             try {
                 Map<String, Object> sessionEvent = new HashMap<String, Object>();
                 sessionEvent.put("sessionId", finalSessionId);
                 emitter.send(SseEmitter.event().name("session").data(objectMapper.writeValueAsString(sessionEvent)));
-                chatProxyService.streamChat(request.getMessage(), request.getDebug(), request.getReactEvents(), emitter, (answer, reactEvents) -> {
-                    if (StringUtils.hasText(request.getUserId()) && StringUtils.hasText(finalSessionId)) {
-                        return chatHistoryService.appendMessage(request.getUserId(), finalSessionId, "assistant", answer, reactEvents);
+                chatProxyService.streamChat(request.getMessage(), request.getDebug(), request.getReactEvents(), finalUserId, finalSessionId, messageId, request.getConversationMode(), emitter, (answer, reactEvents) -> {
+                    if (StringUtils.hasText(finalUserId) && StringUtils.hasText(finalSessionId)) {
+                        return chatHistoryService.appendMessage(finalUserId, finalSessionId, "assistant", answer, reactEvents);
                     }
                     return "";
                 });
@@ -240,44 +250,65 @@ public class ApiController {
     }
 
     @GetMapping("/chat/sessions")
-    public List<Map<String, Object>> chatSessions(
-            @RequestParam String userId,
+    public List<Map<String, Object>> chatSessions(HttpServletRequest request,
             @RequestParam(defaultValue = "false") boolean archived
     ) {
-        return chatHistoryService.listSessions(userId, archived);
+        return chatHistoryService.listSessions(requireUser(request), archived);
     }
 
     @PostMapping("/chat/sessions")
-    public Map<String, Object> createChatSession(@Valid @RequestBody ChatSessionRequest request) {
-        return chatHistoryService.createSession(request.getUserId(), request.getTitle());
+    public Map<String, Object> createChatSession(@Valid @RequestBody ChatSessionRequest request, HttpServletRequest httpRequest) {
+        return chatHistoryService.createSession(requireUser(httpRequest), request.getTitle());
     }
 
     @GetMapping("/chat/sessions/{sessionId}/messages")
     public List<Map<String, Object>> chatMessages(
-            @PathVariable String sessionId,
-            @RequestParam String userId
+            @PathVariable String sessionId, HttpServletRequest request
     ) {
-        return chatHistoryService.listMessages(userId, sessionId);
+        return chatHistoryService.listMessages(requireUser(request), sessionId);
+    }
+
+    @GetMapping("/chat/sessions/{sessionId}/tasks")
+    public List<Map<String, Object>> chatTasks(@PathVariable String sessionId, HttpServletRequest request) {
+        return chatHistoryService.listTasks(requireUser(request), sessionId);
+    }
+
+    @PostMapping("/chat/sessions/{sessionId}/tasks/{taskId}/cancel")
+    public Map<String, Object> cancelChatTask(@PathVariable String sessionId, @PathVariable String taskId, HttpServletRequest request) {
+        Map<String, Object> response = new HashMap<String, Object>();
+        response.put("cancelled", chatHistoryService.cancelTask(requireUser(request), sessionId, taskId));
+        return response;
     }
 
     @DeleteMapping("/chat/sessions/{sessionId}")
     public Map<String, Object> deleteChatSession(
-            @PathVariable String sessionId,
-            @RequestParam String userId
+            @PathVariable String sessionId, HttpServletRequest request
     ) {
         Map<String, Object> response = new HashMap<String, Object>();
-        response.put("deleted", chatHistoryService.deleteSession(userId, sessionId));
+        response.put("deleted", chatHistoryService.deleteSession(requireUser(request), sessionId));
         return response;
     }
 
     @PatchMapping("/chat/sessions/{sessionId}/archive")
     public Map<String, Object> archiveChatSession(
-            @PathVariable String sessionId,
-            @RequestParam String userId,
+            @PathVariable String sessionId, HttpServletRequest request,
             @RequestParam(defaultValue = "true") boolean archived
     ) {
         Map<String, Object> response = new HashMap<String, Object>();
-        response.put("archived", chatHistoryService.setSessionArchived(userId, sessionId, archived));
+        response.put("archived", chatHistoryService.setSessionArchived(requireUser(request), sessionId, archived));
         return response;
+    }
+
+    private String optionalUser(HttpServletRequest request) {
+        Object userId = request.getAttribute(JwtAuthenticationInterceptor.AUTHENTICATED_USER_ID);
+        return userId == null ? "" : String.valueOf(userId);
+    }
+
+    private String requireUser(HttpServletRequest request) {
+        String userId = optionalUser(request);
+        if (!StringUtils.hasText(userId)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录");
+        }
+        return userId;
     }
 }

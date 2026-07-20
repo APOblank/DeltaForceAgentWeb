@@ -22,10 +22,12 @@ public class UserService {
 
     private final Driver driver;
     private final AppProperties properties;
+    private final JwtService jwtService;
 
-    public UserService(Driver driver, AppProperties properties) {
+    public UserService(Driver driver, AppProperties properties, JwtService jwtService) {
         this.driver = driver;
         this.properties = properties;
+        this.jwtService = jwtService;
     }
 
     @PostConstruct
@@ -132,11 +134,14 @@ public class UserService {
     }
 
     private AuthResponse toAuthResponse(Record row) {
-        return new AuthResponse(
+        AuthResponse response = new AuthResponse(
                 row.get("userId").asString(),
                 row.get("username").asString(),
                 row.get("displayName").asString()
         );
+        response.setToken(jwtService.issue(response));
+        response.setExpiresIn(properties.getSecurity().getJwtTtlSeconds());
+        return response;
     }
 
     private String normalize(String username) {

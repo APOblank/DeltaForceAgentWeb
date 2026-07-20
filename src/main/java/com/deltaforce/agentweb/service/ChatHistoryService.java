@@ -87,8 +87,10 @@ public class ChatHistoryService {
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
                                 "OPTIONAL MATCH (s)-[:HAS_MESSAGE]->(m:AgentChatMessage) " +
-                                "WITH s, [message IN collect(m) WHERE message IS NOT NULL] AS messages " +
+                                "OPTIONAL MATCH (s)-[:HAS_TASK]->(t:AgentTask) " +
+                                "WITH s, [message IN collect(DISTINCT m) WHERE message IS NOT NULL] AS messages, [task IN collect(DISTINCT t) WHERE task IS NOT NULL] AS tasks " +
                                 "FOREACH (message IN messages | DETACH DELETE message) " +
+                                "FOREACH (task IN tasks | DETACH DELETE task) " +
                                 "DETACH DELETE s " +
                                 "RETURN 1 AS deleted",
                         Values.parameters("userId", userId, "sessionId", sessionId)
@@ -123,6 +125,9 @@ public class ChatHistoryService {
 
     public String ensureSession(String userId, String sessionId, String firstMessage) {
         if (StringUtils.hasText(sessionId)) {
+            if (!ownsSession(userId, sessionId)) {
+                throw new IllegalArgumentException("当前用户无权访问该会话。");
+            }
             return sessionId;
         }
         String title = titleFromMessage(firstMessage);
@@ -161,6 +166,51 @@ public class ChatHistoryService {
             });
         }
         return messageId;
+    }
+
+    public List<Map<String, Object>> listTasks(String userId, String sessionId) {
+        try (Session session = session()) {
+            return session.readTransaction(tx -> {
+                List<Map<String, Object>> tasks = new ArrayList<Map<String, Object>>();
+                org.neo4j.driver.Result result = tx.run(
+                        "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
+                                "OPTIONAL MATCH (s)-[:HAS_TASK]->(t:AgentTask) " +
+                                "RETURN properties(t) AS task ORDER BY coalesce(t.updatedAt, t.createdAt) DESC",
+                        Values.parameters("userId", userId, "sessionId", sessionId)
+                );
+                while (result.hasNext()) {
+                    Record row = result.next();
+                    if (!row.get("task").isNull()) {
+                        tasks.add(new HashMap<String, Object>(row.get("task").asMap()));
+                    }
+                }
+                return tasks;
+            });
+        }
+    }
+
+    public boolean cancelTask(String userId, String sessionId, String taskId) {
+        try (Session session = session()) {
+            return session.writeTransaction(tx -> tx.run(
+                    "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId})-[:HAS_TASK]->(t:AgentTask) " +
+                            "WHERE coalesce(t.taskId, t.task_id, t.id) = $taskId " +
+                            "SET t.status = 'cancelled', t.cancelledAt = $now, t.updatedAt = $now " +
+                            "RETURN coalesce(t.taskId, t.task_id, t.id) AS taskId",
+                    Values.parameters("userId", userId, "sessionId", sessionId, "taskId", taskId, "now", Instant.now().toString())
+            ).hasNext());
+        }
+    }
+
+    public boolean ownsSession(String userId, String sessionId) {
+        if (!StringUtils.hasText(userId) || !StringUtils.hasText(sessionId)) {
+            return false;
+        }
+        try (Session session = session()) {
+            return session.readTransaction(tx -> tx.run(
+                    "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) RETURN s.sessionId AS sessionId",
+                    Values.parameters("userId", userId, "sessionId", sessionId)
+            ).hasNext());
+        }
     }
 
     private Session session() {

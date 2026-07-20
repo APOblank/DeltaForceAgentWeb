@@ -16,6 +16,12 @@ import java.time.Duration;
 @Configuration
 public class BackendConfig {
 
+    private final JwtAuthenticationInterceptor jwtAuthenticationInterceptor;
+
+    public BackendConfig(JwtAuthenticationInterceptor jwtAuthenticationInterceptor) {
+        this.jwtAuthenticationInterceptor = jwtAuthenticationInterceptor;
+    }
+
     @Bean
     public Driver neo4jDriver(AppProperties properties) {
         AppProperties.Neo4j neo4j = properties.getNeo4j();
@@ -43,6 +49,11 @@ public class BackendConfig {
                         .allowedOrigins("*")
                         .allowedMethods("GET", "POST", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
+            }
+
+            @Override
+            public void addInterceptors(org.springframework.web.servlet.config.annotation.InterceptorRegistry registry) {
+                registry.addInterceptor(jwtAuthenticationInterceptor).addPathPatterns("/api/**");
             }
         };
     }

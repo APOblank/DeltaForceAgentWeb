@@ -19,6 +19,9 @@ const state = {
   selectedReactEventId: "",
   selectedReactMessageId: "",
   messageReactEvents: {},
+  conversation: { activeTaskId: "", taskStatus: "" },
+  nextConversationMode: "auto",
+  chatSending: false,
   modifierFirearms: [],
   modifierCurrent: null,
   modifierSelected: {},
@@ -64,16 +67,23 @@ const mockMarketItems = [
 const MARKET_PAGE_SIZE = 10;
 
 function api(path, options = {}) {
+  const token = state.user?.token;
+  const authorization = token && !path.startsWith("/api/auth/") ? { Authorization: `Bearer ${token}` } : {};
   return fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...authorization,
       ...(options.headers || {}),
     },
   }).then(async (response) => {
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
+      if (response.status === 401 && state.user) {
+        setUser(null);
+        location.hash = "#/login";
+      }
       throw new Error(data?.message || data?.error || response.statusText);
     }
     return data;
@@ -376,6 +386,7 @@ function chatPage() {
           <div>
             <span class="badge blue">ReAct</span>
             <h3>执行过程</h3>
+            <span id="conversation-status" class="conversation-status" hidden></span>
           </div>
           <button class="chip-button" id="export-react-button" type="button">导出</button>
         </div>
@@ -441,7 +452,7 @@ function renderSessionList() {
 
 function setChatSessionArchived(sessionId, archived) {
   if (!state.user || !sessionId) return;
-  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/archive?userId=${encodeURIComponent(state.user.userId)}&archived=${archived}`, { method: "PATCH" })
+  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/archive?archived=${archived}`, { method: "PATCH" })
     .then((result) => {
       if (!result?.archived) throw new Error("操作失败。");
       if (archived && state.activeSessionId === sessionId) {
@@ -456,7 +467,7 @@ function setChatSessionArchived(sessionId, archived) {
 
 function deleteChatSession(sessionId) {
   if (!state.user || !sessionId) return;
-  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(state.user.userId)}`, { method: "DELETE" })
+  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" })
     .then((result) => {
       if (!result?.deleted) throw new Error("\u672a\u627e\u5230\u53ef\u5220\u9664\u7684\u5bf9\u8bdd\u8bb0\u5f55\u3002");
       state.sessions = state.sessions.filter((session) => session.sessionId !== sessionId);
@@ -479,7 +490,7 @@ function deleteChatSession(sessionId) {
 
 function loadSessions() {
   if (!state.user) return Promise.resolve();
-  return api(`/api/chat/sessions?userId=${encodeURIComponent(state.user.userId)}&archived=${state.showArchivedSessions}`)
+  return api(`/api/chat/sessions?archived=${state.showArchivedSessions}`)
     .then((sessions) => {
       state.sessions = sessions || [];
       renderSessionList();
@@ -494,7 +505,7 @@ function loadSessionMessages(sessionId) {
   state.activeSessionId = sessionId;
   localStorage.setItem("delta-force-session", sessionId);
   renderSessionList();
-  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages?userId=${encodeURIComponent(state.user.userId)}`)
+  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`)
     .then((messages) => {
       const box = document.querySelector("#messages");
       state.messageReactEvents = {};
@@ -514,6 +525,7 @@ function loadSessionMessages(sessionId) {
       box.innerHTML = messages.length ? messages.map(messageMarkup).join("") : defaultChatMessages();
       bindMessageReactClicks();
       renderReactTimeline();
+      loadSessionTasks();
       box.scrollTop = box.scrollHeight;
     })
     .catch(() => {
@@ -610,8 +622,7 @@ function publishGunModRecommendation(messageId, button) {
   if (!reply.content || !state.user?.userId) return;
   button.disabled = true;
   button.textContent = "发布中…";
-  const adminUserId = encodeURIComponent(state.user.userId);
-  api("/api/daily-content").then((content) => api(`/api/admin/daily-content?adminUserId=${adminUserId}`, {
+  api("/api/daily-content").then((content) => api("/api/admin/daily-content", {
     method: "POST",
     body: JSON.stringify({ ...content, aiRecommendation: reply.content, aiPrompt: reply.prompt || "智能对话中的改枪任务" }),
   })).then(() => { button.textContent = "已发布"; }).catch((error) => { button.disabled = false; button.textContent = error.message || "发布失败"; });
@@ -706,6 +717,58 @@ function selectReactMessage(messageId) {
     message.classList.toggle("selected-react-message", message.dataset.messageId === state.selectedReactMessageId);
   });
   renderReactTimeline();
+  loadSessionTasks();
+}
+
+function applyConversationMetadata(value) {
+  let metadata = value;
+  if (typeof metadata === "string") {
+    try { metadata = JSON.parse(metadata); } catch { return; }
+  }
+  if (!metadata || typeof metadata !== "object") return;
+  const sessionId = metadata.session_id || metadata.sessionId;
+  if (sessionId) {
+    state.activeSessionId = String(sessionId);
+    localStorage.setItem("delta-force-session", state.activeSessionId);
+  }
+  const conversation = metadata.conversation && typeof metadata.conversation === "object" ? metadata.conversation : metadata;
+  const activeTaskId = conversation.active_task_id || conversation.activeTaskId;
+  const taskStatus = conversation.task_status || conversation.taskStatus;
+  if (activeTaskId) state.conversation.activeTaskId = String(activeTaskId);
+  if (taskStatus) state.conversation.taskStatus = String(taskStatus);
+  renderConversationStatus();
+}
+
+function renderConversationStatus() {
+  const status = document.querySelector("#conversation-status");
+  if (!status) return;
+  const taskStatus = state.conversation.taskStatus;
+  const labels = {
+    awaiting_input: "等待补充参数",
+    running: "任务执行中",
+    completed: "任务已完成",
+    cancelled: "任务已取消",
+    failed: "任务失败",
+  };
+  status.hidden = !taskStatus;
+  status.className = `conversation-status ${taskStatus || ""}`;
+  status.textContent = labels[taskStatus] || taskStatus;
+}
+
+function loadSessionTasks() {
+  if (!state.user || !state.activeSessionId) return Promise.resolve();
+  return api(`/api/chat/sessions/${encodeURIComponent(state.activeSessionId)}/tasks`)
+    .then((tasks) => {
+      const activeTask = (tasks || []).find((task) => task.taskId === state.conversation.activeTaskId || task.task_id === state.conversation.activeTaskId || task.id === state.conversation.activeTaskId) || (tasks || [])[0];
+      if (activeTask) {
+        state.conversation.activeTaskId = String(activeTask.taskId || activeTask.task_id || activeTask.id || "");
+        state.conversation.taskStatus = String(activeTask.status || "");
+      } else {
+        state.conversation = { activeTaskId: "", taskStatus: "" };
+      }
+      renderConversationStatus();
+    })
+    .catch(() => {});
 }
 
 function renderReactTimeline() {
@@ -785,14 +848,16 @@ function exportReactLog() {
   URL.revokeObjectURL(url);
 }
 
-async function streamChat(text, assistantId) {
+async function streamChat(text, assistantId, messageId, conversationMode) {
+  const token = state.user?.token;
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({
       message: text,
-      userId: state.user?.userId || "",
       sessionId: state.activeSessionId || "",
+      messageId,
+      conversationMode,
       reactEvents: true,
     }),
   });
@@ -822,8 +887,7 @@ async function streamChat(text, assistantId) {
 
       const chunk = JSON.parse(raw);
       if (chunk.sessionId) {
-        state.activeSessionId = chunk.sessionId;
-        localStorage.setItem("delta-force-session", chunk.sessionId);
+        applyConversationMetadata(chunk);
         continue;
       }
       if (chunk.assistantMessageId) {
@@ -845,6 +909,9 @@ async function streamChat(text, assistantId) {
       }
 
       const delta = chunk.choices?.[0]?.delta || {};
+      if (delta.session) {
+        applyConversationMetadata(delta.session);
+      }
       if (delta.react_event) {
         updateReactTimeline(delta.react_event);
       }
@@ -861,6 +928,7 @@ async function streamChat(text, assistantId) {
   if (bubble && !finalText) {
     bubble.innerHTML = `后端没有返回内容<span class="message-react-tag">ReAct</span>`;
   }
+  await loadSessionTasks();
   return loadSessions();
 }
 
@@ -1252,10 +1320,9 @@ function bindNews() {
 }
 
 function bindAdmin() {
-  const adminUserId = encodeURIComponent(state.user.userId);
-  const loadUsers = () => api(`/api/admin/users?adminUserId=${adminUserId}`).then((users) => { document.querySelector("#admin-users-body").innerHTML = users.length ? users.map((user) => `<tr><td><strong>${escapeHtml(user.username)}</strong></td><td>${escapeHtml(user.displayName)}</td><td>${user.sessionCount}</td><td>${escapeHtml(formatUpdatedAt(user.createdAt))}</td><td>${escapeHtml(formatUpdatedAt(user.lastLoginAt))}</td></tr>`).join("") : `<tr><td colspan="5">暂无用户</td></tr>`; }).catch((error) => { document.querySelector("#admin-users-body").innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`; });
-  const loadContent = () => api(`/api/admin/daily-content?adminUserId=${adminUserId}`).then((content) => { document.querySelector("#admin-password-az3").value = content.passwordAz3 || ""; document.querySelector("#admin-password-zero-dam").value = content.passwordZeroDam || ""; document.querySelector("#admin-password-space-city").value = content.passwordSpaceCity || ""; document.querySelector("#admin-password-tide-prison").value = content.passwordTidePrison || ""; document.querySelector("#admin-password-brakkesh").value = content.passwordBrakkesh || ""; document.querySelector("#admin-password-longbow").value = content.passwordLongbow || ""; document.querySelector("#admin-ai-recommendation").value = content.aiRecommendation || ""; document.querySelector("#admin-ai-prompt").value = content.aiPrompt || ""; document.querySelector("#admin-news-content").value = content.newsContent || ""; });
-  const loadGithubUrl = () => api(`/api/admin/daily-content?adminUserId=${adminUserId}`).then((content) => { document.querySelector("#admin-github-url").value = content.githubUrl || ""; });
+  const loadUsers = () => api("/api/admin/users").then((users) => { document.querySelector("#admin-users-body").innerHTML = users.length ? users.map((user) => `<tr><td><strong>${escapeHtml(user.username)}</strong></td><td>${escapeHtml(user.displayName)}</td><td>${user.sessionCount}</td><td>${escapeHtml(formatUpdatedAt(user.createdAt))}</td><td>${escapeHtml(formatUpdatedAt(user.lastLoginAt))}</td></tr>`).join("") : `<tr><td colspan="5">暂无用户</td></tr>`; }).catch((error) => { document.querySelector("#admin-users-body").innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`; });
+  const loadContent = () => api("/api/admin/daily-content").then((content) => { document.querySelector("#admin-password-az3").value = content.passwordAz3 || ""; document.querySelector("#admin-password-zero-dam").value = content.passwordZeroDam || ""; document.querySelector("#admin-password-space-city").value = content.passwordSpaceCity || ""; document.querySelector("#admin-password-tide-prison").value = content.passwordTidePrison || ""; document.querySelector("#admin-password-brakkesh").value = content.passwordBrakkesh || ""; document.querySelector("#admin-password-longbow").value = content.passwordLongbow || ""; document.querySelector("#admin-ai-recommendation").value = content.aiRecommendation || ""; document.querySelector("#admin-ai-prompt").value = content.aiPrompt || ""; document.querySelector("#admin-news-content").value = content.newsContent || ""; });
+  const loadGithubUrl = () => api("/api/admin/daily-content").then((content) => { document.querySelector("#admin-github-url").value = content.githubUrl || ""; });
   document.querySelector("#admin-users-refresh").addEventListener("click", loadUsers);
   document.querySelector("#admin-github-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1263,13 +1330,13 @@ function bindAdmin() {
     const githubUrl = document.querySelector("#admin-github-url").value.trim();
     if (githubUrl && !safeExternalUrl(githubUrl)) { status.textContent = "GitHub URL must start with http:// or https://"; return; }
     status.textContent = "Saving...";
-    api(`/api/admin/daily-content?adminUserId=${adminUserId}`)
-      .then((content) => api(`/api/admin/daily-content?adminUserId=${adminUserId}`, { method: "POST", body: JSON.stringify({ ...content, githubUrl }) }))
+    api("/api/admin/daily-content")
+      .then((content) => api("/api/admin/daily-content", { method: "POST", body: JSON.stringify({ ...content, githubUrl }) }))
       .then((content) => { state.githubUrl = content.githubUrl || ""; renderTopActions(); status.textContent = "Saved"; })
       .catch((error) => { status.textContent = error.message || "Save failed"; });
   });
-  document.querySelector("#admin-content-form").addEventListener("submit", (event) => { event.preventDefault(); const status = document.querySelector("#admin-content-status"); status.textContent = "正在保存…"; api(`/api/admin/daily-content?adminUserId=${adminUserId}`, { method: "POST", body: JSON.stringify({ passwordAz3: document.querySelector("#admin-password-az3").value.trim(), passwordZeroDam: document.querySelector("#admin-password-zero-dam").value.trim(), passwordSpaceCity: document.querySelector("#admin-password-space-city").value.trim(), passwordTidePrison: document.querySelector("#admin-password-tide-prison").value.trim(), passwordBrakkesh: document.querySelector("#admin-password-brakkesh").value.trim(), passwordLongbow: document.querySelector("#admin-password-longbow").value.trim(), aiRecommendation: document.querySelector("#admin-ai-recommendation").value.trim(), aiPrompt: document.querySelector("#admin-ai-prompt").value.trim(), newsContent: document.querySelector("#admin-news-content").value.trim() }) }).then(() => { status.textContent = "已保存"; }).catch((error) => { status.textContent = error.message || "保存失败"; }); });
-  document.querySelector("#admin-refresh-form").addEventListener("submit", (event) => { event.preventDefault(); const submit = document.querySelector("#admin-refresh-submit"), result = document.querySelector("#admin-refresh-result"), pages = Number(document.querySelector("#refresh-pages").value); const request = {}; if (document.querySelector("#refresh-kind").value) request.kind = document.querySelector("#refresh-kind").value; if (pages > 0) request.max_pages = pages; if (document.querySelector("#refresh-save-partial").checked) request.save_partial = true; submit.disabled = true; result.textContent = "正在刷新，请勿关闭页面…"; api(`/api/admin/market/refresh?adminUserId=${adminUserId}`, { method: "POST", body: JSON.stringify(request) }).then((data) => { result.textContent = JSON.stringify(data, null, 2); }).catch((error) => { result.textContent = error.message || "刷新失败"; }).finally(() => { submit.disabled = false; }); });
+  document.querySelector("#admin-content-form").addEventListener("submit", (event) => { event.preventDefault(); const status = document.querySelector("#admin-content-status"); status.textContent = "正在保存…"; api("/api/admin/daily-content", { method: "POST", body: JSON.stringify({ passwordAz3: document.querySelector("#admin-password-az3").value.trim(), passwordZeroDam: document.querySelector("#admin-password-zero-dam").value.trim(), passwordSpaceCity: document.querySelector("#admin-password-space-city").value.trim(), passwordTidePrison: document.querySelector("#admin-password-tide-prison").value.trim(), passwordBrakkesh: document.querySelector("#admin-password-brakkesh").value.trim(), passwordLongbow: document.querySelector("#admin-password-longbow").value.trim(), aiRecommendation: document.querySelector("#admin-ai-recommendation").value.trim(), aiPrompt: document.querySelector("#admin-ai-prompt").value.trim(), newsContent: document.querySelector("#admin-news-content").value.trim() }) }).then(() => { status.textContent = "已保存"; }).catch((error) => { status.textContent = error.message || "保存失败"; }); });
+  document.querySelector("#admin-refresh-form").addEventListener("submit", (event) => { event.preventDefault(); const submit = document.querySelector("#admin-refresh-submit"), result = document.querySelector("#admin-refresh-result"), pages = Number(document.querySelector("#refresh-pages").value); const request = {}; if (document.querySelector("#refresh-kind").value) request.kind = document.querySelector("#refresh-kind").value; if (pages > 0) request.max_pages = pages; if (document.querySelector("#refresh-save-partial").checked) request.save_partial = true; submit.disabled = true; result.textContent = "正在刷新，请勿关闭页面…"; api("/api/admin/market/refresh", { method: "POST", body: JSON.stringify(request) }).then((data) => { result.textContent = JSON.stringify(data, null, 2); }).catch((error) => { result.textContent = error.message || "刷新失败"; }).finally(() => { submit.disabled = false; }); });
   loadUsers(); loadContent(); loadGithubUrl();
 }
 
@@ -1362,9 +1429,12 @@ function bindChat() {
     state.selectedReactEventId = "";
     state.selectedReactMessageId = "";
     state.messageReactEvents = {};
+    state.conversation = { activeTaskId: "", taskStatus: "" };
+    state.nextConversationMode = "new";
     localStorage.removeItem("delta-force-session");
     document.querySelector("#messages").innerHTML = defaultChatMessages();
     renderReactTimeline();
+    renderConversationStatus();
     renderSessionList();
   });
   document.querySelector("#export-react-button").addEventListener("click", exportReactLog);
@@ -1375,9 +1445,16 @@ function bindChat() {
     event.preventDefault();
     const input = document.querySelector("#chat-input");
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || state.chatSending) return;
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
     const messages = document.querySelector("#messages");
     const assistantId = `assistant-${Date.now()}`;
+    const messageId = typeof window.crypto?.randomUUID === "function" ? window.crypto.randomUUID() : `message-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const conversationMode = state.nextConversationMode || "auto";
+    state.nextConversationMode = "auto";
+    state.chatSending = true;
+    input.disabled = true;
+    if (submit) submit.disabled = true;
     state.reactEvents = [];
     state.selectedReactEventId = "";
     state.selectedReactMessageId = assistantId;
@@ -1390,13 +1467,18 @@ function bindChat() {
     input.value = "";
     messages.scrollTop = messages.scrollHeight;
     try {
-      await streamChat(text, assistantId);
+      await streamChat(text, assistantId, messageId, conversationMode);
     } catch (error) {
       const bubble = document.querySelector(`#${assistantId}`);
       if (bubble) {
         bubble.textContent = error.message || "后端暂未连接或 FastAPI/Neo4j 不可用，当前无法获得真实回复。";
       }
       messages.scrollTop = messages.scrollHeight;
+    } finally {
+      state.chatSending = false;
+      input.disabled = false;
+      if (submit) submit.disabled = false;
+      input.focus();
     }
   });
 }

@@ -9,7 +9,12 @@ const state = {
   user: JSON.parse(localStorage.getItem("delta-force-user") || "null"),
   activeSessionId: localStorage.getItem("delta-force-session") || "",
   sessions: [],
+  showArchivedSessions: false,
+  githubUrl: "",
+  locale: localStorage.getItem("delta-force-locale") || "zh-CN",
+  theme: localStorage.getItem("delta-force-theme") || "light",
   marketItems: [],
+  marketPage: 1,
   reactEvents: [],
   selectedReactEventId: "",
   selectedReactMessageId: "",
@@ -37,12 +42,26 @@ const pageTitles = {
   "/login": "账号登录",
 };
 
+const pageTitlesEn = {
+  "/": "Delta Force Agent",
+  "/chat": "AI Chat",
+  "/market": "Market Data",
+  "/gun-modifier": "Gun Bench",
+  "/knowledge": "Knowledge Graph",
+  "/readiness": "Readiness Builder",
+  "/news": "Daily Intel",
+  "/admin": "Admin Console",
+  "/login": "Account Login",
+};
+
 const publicRoutes = new Set(["/", "/market", "/gun-modifier", "/readiness", "/news", "/login"]);
 
 const mockMarketItems = [
   { name: "0.0", type: "枪械", price: 0, change: 0.0 },
 
 ];
+
+const MARKET_PAGE_SIZE = 10;
 
 function api(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
@@ -128,7 +147,12 @@ function setActive(route) {
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.route === route);
   });
-  title.textContent = pageTitles[route] || pageTitles["/"];
+  title.textContent = pageTitle(route);
+}
+
+function pageTitle(route) {
+  const titles = state.locale === "en" ? pageTitlesEn : pageTitles;
+  return titles[route] || titles["/"];
 }
 
 function setUser(user) {
@@ -145,24 +169,144 @@ function setUser(user) {
 }
 
 function renderTopActions() {
+  renderSidebarUser();
   const adminNav = document.querySelector('[data-route="/admin"]');
   if (adminNav) adminNav.hidden = state.user?.username !== "admin";
   if (!state.user) {
-    topActions.innerHTML = `<a class="primary-button" href="#/login">登录</a>`;
+    topActions.innerHTML = topToolsMarkup();
+    bindTopTools();
     return;
   }
   topActions.innerHTML = `
-    <a class="ghost-button" href="#/chat">新对话</a>
     <div class="user-pill">
       <span class="avatar small">${escapeHtml(state.user.displayName?.slice(0, 1) || "用")}</span>
       <span>${escapeHtml(state.user.displayName || state.user.username)}</span>
       <button class="chip-button" id="logout-button" type="button">退出</button>
     </div>
+    ${topToolsMarkup()}
   `;
+  bindTopTools();
   document.querySelector("#logout-button")?.addEventListener("click", () => {
-    setUser(null);
-    location.hash = "#/login";
+    logout();
   });
+}
+
+function topToolsMarkup() {
+  const githubUrl = safeExternalUrl(state.githubUrl);
+  const github = githubUrl
+    ? `<a class="header-github-link" href="${escapeHtml(githubUrl)}" target="_blank" rel="noopener noreferrer"><img src="/github.svg" alt="GitHub" width="16" height="16" />GitHub</a>`
+    : `<span class="header-github-link is-disabled" title="${state.locale === "en" ? "Configure GitHub URL in Admin" : "请在管理后台配置 GitHub 链接"}"><img src="/github.svg" alt="GitHub" width="16" height="16" />GitHub</span>`;
+  const languageTitle = state.locale === "en" ? "切换到中文" : "Switch to English";
+  const themeTitle = state.theme === "dark" ? "Light Mode" : "Dark Mode";
+  const languageIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 6 6"></path><path d="m4 14 6-6 2-3"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="m22 22-5-10-5 10"></path><path d="M14 18h6"></path></svg>`;
+  const themeIcon = state.theme === "dark"
+    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6.8 6.8 0 0 0 9 9A9 9 0 1 1 12 3Z"></path></svg>`
+    : `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>`;
+  return `<div class="top-tool-group" role="toolbar" aria-label="${state.locale === "en" ? "Page tools" : "页面工具"}">${github}<span class="top-tools-divider" aria-hidden="true"></span><button id="locale-toggle" class="top-icon-button" type="button" title="${languageTitle}" aria-label="${languageTitle}"><span class="top-icon-button-content">${languageIcon}</span><span class="top-icon-button-hover" aria-hidden="true"></span></button><button id="theme-toggle" class="top-icon-button" type="button" title="${themeTitle}" aria-label="${themeTitle}"><span class="top-icon-button-content">${themeIcon}</span><span class="top-icon-button-hover" aria-hidden="true"></span></button></div>`;
+}
+
+function bindTopTools() {
+  document.querySelector("#locale-toggle")?.addEventListener("click", () => {
+    state.locale = state.locale === "en" ? "zh-CN" : "en";
+    localStorage.setItem("delta-force-locale", state.locale);
+    applyLocale();
+    render();
+  });
+  document.querySelector("#theme-toggle")?.addEventListener("click", () => {
+    state.theme = state.theme === "dark" ? "light" : "dark";
+    localStorage.setItem("delta-force-theme", state.theme);
+    applyTheme();
+    renderTopActions();
+  });
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.style.colorScheme = state.theme;
+}
+
+function applyLocale() {
+  document.documentElement.lang = state.locale === "en" ? "en" : "zh-CN";
+  const labels = state.locale === "en"
+    ? { "/": "Home", "/chat": "AI Chat", "/market": "Market", "/gun-modifier": "Gun Bench", "/knowledge": "Knowledge", "/readiness": "Readiness", "/news": "Daily Intel", "/admin": "Admin" }
+    : { "/": "首页", "/chat": "智能对话", "/market": "市场数据", "/gun-modifier": "改枪台", "/knowledge": "图谱查询", "/readiness": "卡战备", "/news": "今日资讯", "/admin": "管理后台" };
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    const text = item.querySelectorAll("span")[1];
+    if (text && labels[item.dataset.route]) text.textContent = labels[item.dataset.route];
+  });
+  const brand = document.querySelector(".brand strong");
+  if (brand) brand.textContent = state.locale === "en" ? "Delta Force Agent" : "三角洲行动智能体";
+}
+
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function githubLinkMarkup() {
+  const url = safeExternalUrl(state.githubUrl);
+  return url ? `<a class="ghost-button github-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">GitHub</a>` : "";
+}
+
+function loadSiteConfig() {
+  return api("/api/daily-content").then((content) => {
+    state.githubUrl = content.githubUrl || "";
+    renderTopActions();
+  }).catch(() => {});
+}
+
+function logout() {
+  setUser(null);
+  location.hash = "#/login";
+}
+
+function renderSidebarUser() {
+  const area = document.querySelector("#sidebar-user-area");
+  if (!area) return;
+  if (!state.user) {
+    area.innerHTML = `<a class="sidebar-login-button" href="#/login"><span class="sidebar-user-avatar">&#30331;</span><span>${state.locale === "en" ? "Sign in" : "登录"}</span><span class="sidebar-login-arrow" aria-hidden="true">→</span></a>`;
+    return;
+  }
+  const displayName = state.user.displayName || state.user.username;
+  const accountName = state.user.username || displayName;
+  area.innerHTML = `
+    <div id="sidebar-user-card" class="sidebar-user-card" tabindex="0" title="&#21491;&#38190;&#25110;&#28857;&#20987;&#19977;&#28857;&#26597;&#30475;&#29992;&#25143;&#20449;&#24687;">
+      <span class="sidebar-user-avatar">${escapeHtml(displayName.slice(0, 1) || "U")}</span>
+      <span class="sidebar-user-name" title="${escapeHtml(accountName)}">${escapeHtml(accountName)}</span>
+      <button id="sidebar-user-more" class="sidebar-user-more" type="button" aria-label="&#29992;&#25143;&#25805;&#20316;" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="3.4" cy="8" r="1.15" fill="currentColor"></circle><circle cx="8" cy="8" r="1.15" fill="currentColor"></circle><circle cx="12.6" cy="8" r="1.15" fill="currentColor"></circle></svg>
+      </button>
+    </div>
+    <div id="sidebar-user-menu" class="sidebar-user-menu" hidden>
+      <button id="sidebar-logout-button" class="ghost-button" type="button">&#36864;&#20986;&#30331;&#24405;</button>
+    </div>
+  `;
+  const card = document.querySelector("#sidebar-user-card");
+  const menu = document.querySelector("#sidebar-user-menu");
+  const moreButton = document.querySelector("#sidebar-user-more");
+  const toggleMenu = () => {
+    menu.hidden = !menu.hidden;
+    moreButton.setAttribute("aria-expanded", String(!menu.hidden));
+  };
+  card?.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    toggleMenu();
+  });
+  card?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleMenu();
+    }
+  });
+  moreButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleMenu();
+  });
+  document.querySelector("#sidebar-logout-button")?.addEventListener("click", logout);
 }
 
 function metricLine(label, value) {
@@ -214,6 +358,7 @@ function chatPage() {
           <h3>历史记录</h3>
           <button class="chip-button" id="new-session-button" type="button">新建</button>
         </div>
+        <button id="archive-toggle-button" class="chip-button session-archive-toggle" type="button">查看归档</button>
         <div id="session-list">
           ${state.user ? `<div class="empty-state compact">正在读取会话...</div>` : `<div class="empty-state compact">登录后保存和读取历史对话</div>`}
         </div>
@@ -232,7 +377,7 @@ function chatPage() {
             <span class="badge blue">ReAct</span>
             <h3>执行过程</h3>
           </div>
-          <button class="chip-button" id="clear-react-button" type="button">清空</button>
+          <button class="chip-button" id="export-react-button" type="button">导出</button>
         </div>
         <div class="react-timeline" id="react-timeline">
           <div class="empty-state compact">发送问题后展示任务拆解、工具调用和观察结果。</div>
@@ -257,19 +402,84 @@ function renderSessionList() {
     return;
   }
   container.innerHTML = state.sessions.map((session) => `
-    <button class="session-item ${session.sessionId === state.activeSessionId ? "active" : ""}" type="button" data-session-id="${session.sessionId}">
+    <article class="session-item ${session.sessionId === state.activeSessionId ? "active" : ""}" data-session-id="${session.sessionId}">
       <strong>${escapeHtml(session.title || "新的对话")}</strong>
       <small>${escapeHtml((session.updatedAt || "").replace("T", " ").slice(0, 16))}</small>
-    </button>
+      <button class="session-more-button" type="button" data-session-options="${session.sessionId}" aria-label="对话操作">···</button>
+      <div class="session-action-menu" data-session-menu="${session.sessionId}" hidden>
+        <button type="button" data-session-action="${session.archived ? "restore" : "archive"}" data-session-action-id="${session.sessionId}">${session.archived ? "恢复" : "归档"}</button>
+        <button class="danger" type="button" data-session-action="delete" data-session-action-id="${session.sessionId}">删除</button>
+      </div>
+    </article>
   `).join("");
-  container.querySelectorAll("[data-session-id]").forEach((button) => {
-    button.addEventListener("click", () => loadSessionMessages(button.dataset.sessionId));
+  container.querySelectorAll("[data-session-id]").forEach((item) => {
+    item.addEventListener("click", () => loadSessionMessages(item.dataset.sessionId));
   });
+  container.querySelectorAll("[data-session-options]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const menu = container.querySelector(`[data-session-menu="${button.dataset.sessionOptions}"]`);
+      const opening = menu.hidden;
+      container.querySelectorAll("[data-session-menu]").forEach((item) => { item.hidden = true; });
+      menu.hidden = !opening;
+    });
+  });
+  container.querySelectorAll("[data-session-action]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const { sessionAction: action, sessionActionId: sessionId } = button.dataset;
+      if (action === "delete") {
+        const session = state.sessions.find((item) => item.sessionId === sessionId);
+        if (window.confirm(`确定删除“${session?.title || "该对话"}”吗？此操作不可恢复。`)) deleteChatSession(sessionId);
+      } else {
+        setChatSessionArchived(sessionId, action === "archive");
+      }
+    });
+  });
+}
+
+function setChatSessionArchived(sessionId, archived) {
+  if (!state.user || !sessionId) return;
+  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/archive?userId=${encodeURIComponent(state.user.userId)}&archived=${archived}`, { method: "PATCH" })
+    .then((result) => {
+      if (!result?.archived) throw new Error("操作失败。");
+      if (archived && state.activeSessionId === sessionId) {
+        state.activeSessionId = "";
+        localStorage.removeItem("delta-force-session");
+        document.querySelector("#messages").innerHTML = defaultChatMessages();
+      }
+      return loadSessions();
+    })
+    .catch((error) => window.alert(error.message || "操作失败。"));
+}
+
+function deleteChatSession(sessionId) {
+  if (!state.user || !sessionId) return;
+  api(`/api/chat/sessions/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(state.user.userId)}`, { method: "DELETE" })
+    .then((result) => {
+      if (!result?.deleted) throw new Error("\u672a\u627e\u5230\u53ef\u5220\u9664\u7684\u5bf9\u8bdd\u8bb0\u5f55\u3002");
+      state.sessions = state.sessions.filter((session) => session.sessionId !== sessionId);
+      if (state.activeSessionId === sessionId) {
+        state.activeSessionId = "";
+        localStorage.removeItem("delta-force-session");
+        state.reactEvents = [];
+        state.selectedReactEventId = "";
+        state.selectedReactMessageId = "";
+        state.messageReactEvents = {};
+        state.gunModReplies = {};
+        const messages = document.querySelector("#messages");
+        if (messages) messages.innerHTML = defaultChatMessages();
+        renderReactTimeline();
+      }
+      renderSessionList();
+    })
+    .catch((error) => window.alert(error.message || "\u5220\u9664\u5bf9\u8bdd\u5931\u8d25\u3002"));
 }
 
 function loadSessions() {
   if (!state.user) return Promise.resolve();
-  return api(`/api/chat/sessions?userId=${encodeURIComponent(state.user.userId)}`)
+  return api(`/api/chat/sessions?userId=${encodeURIComponent(state.user.userId)}&archived=${state.showArchivedSessions}`)
     .then((sessions) => {
       state.sessions = sessions || [];
       renderSessionList();
@@ -534,6 +744,47 @@ function renderReactTimeline() {
   `;
 }
 
+function reactLogText(events) {
+  const exportedAt = new Date().toISOString();
+  const lines = [
+    "Delta Force Agent - ReAct Execution Log",
+    `Exported at: ${exportedAt}`,
+    `Session ID: ${state.activeSessionId || "(unsaved)"}`,
+    `Event count: ${events.length}`,
+    "",
+  ];
+  events.forEach((event, index) => {
+    lines.push(`[${index + 1}] ${event.title || phaseName(event.phase) || "Event"}`);
+    lines.push(`Event ID: ${event.event_id || ""}`);
+    lines.push(`Phase: ${event.phase || ""}`);
+    lines.push(`Node: ${event.node || ""}`);
+    lines.push(`Status: ${event.status || ""}`);
+    lines.push(`Summary: ${event.summary || ""}`);
+    lines.push("Payload:");
+    lines.push(JSON.stringify(event.payload || {}, null, 2));
+    lines.push("".padEnd(72, "-"));
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
+function exportReactLog() {
+  if (!state.reactEvents.length) {
+    window.alert("当前没有可导出的 ReAct 执行过程。请先选择一条带 ReAct 标识的回复。");
+    return;
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const blob = new Blob(["\ufeff", reactLogText(state.reactEvents)], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `react-execution-${timestamp}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function streamChat(text, assistantId) {
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -628,6 +879,13 @@ function marketPage() {
         </thead>
         <tbody id="market-body">${marketRows(mockMarketItems)}</tbody>
       </table>
+      <div id="market-pagination" class="market-pagination" hidden>
+        <span id="market-page-info"></span>
+        <div class="market-page-actions">
+          <button id="market-prev" class="ghost-button" type="button">上一页</button>
+          <button id="market-next" class="ghost-button" type="button">下一页</button>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -656,6 +914,73 @@ function marketRows(items) {
       </tr>
     `;
   }).join("");
+}
+
+function readinessPage() {
+  return `
+    <section class="panel readiness-intro">
+      <span class="badge amber">READINESS</span>
+      <h2>卡战备</h2>
+      <p>基于当前行情接口的市场价与战备价，为主武器、头盔、防弹衣等装备生成总花费最低的组合方案。</p>
+    </section>
+    <section class="panel">
+      <form id="readiness-form" class="readiness-form">
+        <div class="field"><label for="readiness-target">目标战备</label><input id="readiness-target" type="number" min="1" step="1000" value="120000" required /></div>
+        <div class="field"><label for="readiness-topk">方案数量</label><select id="readiness-topk"><option value="1">1 套</option><option value="3" selected>3 套</option><option value="5">5 套</option></select></div>
+        <button id="readiness-submit" class="primary-button" type="submit">生成方案</button>
+      </form>
+      <p class="readiness-hint">必选：主武器、头盔、防弹衣。胸挂与背包为可选槽位；无实时市场价时按接口返回的战备价估算。</p>
+    </section>
+    <section id="readiness-result" class="readiness-results" aria-live="polite"><div class="empty-state">输入目标战备后生成方案</div></section>
+  `;
+}
+
+function readinessPlanMarkup(plan, index, target) {
+  const gap = Number(plan.gap || 0);
+  const gapText = gap >= 0 ? `超出 ${money(gap)}` : `不足 ${money(Math.abs(gap))}`;
+  const status = plan.qualified ? "已达标" : "未达标";
+  return `
+    <article class="panel readiness-plan">
+      <div class="readiness-plan-head">
+        <div><span class="badge ${plan.qualified ? "blue" : "amber"}">方案 ${index + 1}</span><h3>${status}</h3></div>
+        <strong>${money(plan.totalCost)} <small>预计花费</small></strong>
+      </div>
+      <div class="readiness-metrics">
+        <div><span>目标战备</span><strong>${money(target)}</strong></div>
+        <div><span>实际战备</span><strong>${money(plan.totalCombat)}</strong></div>
+        <div><span>战备差额</span><strong class="${gap >= 0 ? "trend-up" : "trend-down"}">${gapText}</strong></div>
+      </div>
+      <div class="readiness-entry-list">
+        ${(plan.entries || []).map((entry) => `<div class="readiness-entry"><span class="readiness-slot">${escapeHtml(entry.slot)}</span><strong>${escapeHtml(entry.name)}</strong><span>战备 ${money(entry.combatPrice)}</span><span>市场 ${money(entry.currentPrice)}</span><small>${escapeHtml(entry.priceSource || "")}</small></div>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function readinessResultMarkup(result) {
+  if ((result.missingRequiredSlots || []).length) {
+    return `<div class="empty-state">必选槽位缺少行情数据：${escapeHtml(result.missingRequiredSlots.join("、"))}。请确认行情接口已提供这些分类。</div>`;
+  }
+  if (!(result.plans || []).length) return `<div class="empty-state">${escapeHtml(result.message || "未能生成方案")}</div>`;
+  return `<div class="readiness-result-summary">已根据 ${money(result.candidateCount)} 件接口行情物品完成计算，达标方案按预计花费从低到高排列。</div>${result.plans.map((plan, index) => readinessPlanMarkup(plan, index, result.targetCombat)).join("")}`;
+}
+
+function bindReadiness() {
+  const form = document.querySelector("#readiness-form");
+  const resultView = document.querySelector("#readiness-result");
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const button = document.querySelector("#readiness-submit");
+    const targetCombat = Number(document.querySelector("#readiness-target").value);
+    const topK = Number(document.querySelector("#readiness-topk").value);
+    if (!Number.isFinite(targetCombat) || targetCombat <= 0) return;
+    button.disabled = true;
+    resultView.innerHTML = `<div class="empty-state">正在读取行情并计算方案…</div>`;
+    api("/api/readiness/plans", { method: "POST", body: JSON.stringify({ targetCombat, topK }) })
+      .then((result) => { resultView.innerHTML = readinessResultMarkup(result); })
+      .catch((error) => { resultView.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "生成方案失败")}</div>`; })
+      .finally(() => { button.disabled = false; });
+  });
 }
 
 const MODIFIER_STAT_ALIASES = {
@@ -899,6 +1224,7 @@ function newsPage() {
 function adminPage() {
   if (state.user?.username !== "admin") return `<section class="panel admin-denied"><span class="badge amber">RESTRICTED</span><h2>管理员权限必需</h2><p>请使用用户名为 <code>admin</code> 的账户登录后访问管理后台。</p></section>`;
   return `<div class="admin-layout">
+    <section class="panel admin-github"><div class="section-title"><h3>GitHub &#20179;&#24211;&#38142;&#25509;</h3><span id="admin-github-status" class="form-status"></span></div><form id="admin-github-form" class="admin-form"><div class="field"><label for="admin-github-url">GitHub URL</label><input id="admin-github-url" type="url" placeholder="https://github.com/owner/repository" /></div><button class="primary-button" type="submit">&#20445;&#23384;&#38142;&#25509;</button></form></section>
     <section class="panel admin-head"><div><span class="eyebrow">CONTROL CENTER</span><h2>管理员界面</h2><p>管理用户、今日资讯内容与实时市场数据。</p></div><span class="badge">ADMIN</span></section>
     <section class="panel admin-users"><div class="section-title"><h3>用户信息</h3><button id="admin-users-refresh" class="ghost-button" type="button">刷新列表</button></div><div class="query-table-wrap"><table class="data-table"><thead><tr><th>用户</th><th>显示名</th><th>会话数</th><th>创建时间</th><th>最近登录</th></tr></thead><tbody id="admin-users-body"><tr><td colspan="5">正在读取用户信息…</td></tr></tbody></table></div></section>
     <div class="admin-grid"><section class="panel admin-content"><div class="section-title"><h3>编辑今日资讯</h3><span id="admin-content-status" class="form-status"></span></div><form id="admin-content-form" class="admin-form"><div class="field"><label>今日地图密码</label><div class="admin-password-fields"><label>AZ3<input id="admin-password-az3" /></label><label>零号大坝<input id="admin-password-zero-dam" /></label><label>航天基地<input id="admin-password-space-city" /></label><label>潮汐监狱<input id="admin-password-tide-prison" /></label><label>巴克什<input id="admin-password-brakkesh" /></label><label>长弓溪谷<input id="admin-password-longbow" /></label></div></div><div class="field"><label for="admin-ai-recommendation">今日 AI 改枪推荐</label><textarea id="admin-ai-recommendation" rows="5"></textarea><small class="field-help">可直接修改；清空后保存即可删除当前推荐。</small></div><div class="field"><label for="admin-ai-prompt">AI 提示词</label><textarea id="admin-ai-prompt" rows="4"></textarea></div><div class="field"><label for="admin-news-content">三角洲今日资讯</label><textarea id="admin-news-content" rows="4"></textarea></div><button class="primary-button" type="submit">保存今日内容</button></form></section>
@@ -929,10 +1255,22 @@ function bindAdmin() {
   const adminUserId = encodeURIComponent(state.user.userId);
   const loadUsers = () => api(`/api/admin/users?adminUserId=${adminUserId}`).then((users) => { document.querySelector("#admin-users-body").innerHTML = users.length ? users.map((user) => `<tr><td><strong>${escapeHtml(user.username)}</strong></td><td>${escapeHtml(user.displayName)}</td><td>${user.sessionCount}</td><td>${escapeHtml(formatUpdatedAt(user.createdAt))}</td><td>${escapeHtml(formatUpdatedAt(user.lastLoginAt))}</td></tr>`).join("") : `<tr><td colspan="5">暂无用户</td></tr>`; }).catch((error) => { document.querySelector("#admin-users-body").innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`; });
   const loadContent = () => api(`/api/admin/daily-content?adminUserId=${adminUserId}`).then((content) => { document.querySelector("#admin-password-az3").value = content.passwordAz3 || ""; document.querySelector("#admin-password-zero-dam").value = content.passwordZeroDam || ""; document.querySelector("#admin-password-space-city").value = content.passwordSpaceCity || ""; document.querySelector("#admin-password-tide-prison").value = content.passwordTidePrison || ""; document.querySelector("#admin-password-brakkesh").value = content.passwordBrakkesh || ""; document.querySelector("#admin-password-longbow").value = content.passwordLongbow || ""; document.querySelector("#admin-ai-recommendation").value = content.aiRecommendation || ""; document.querySelector("#admin-ai-prompt").value = content.aiPrompt || ""; document.querySelector("#admin-news-content").value = content.newsContent || ""; });
+  const loadGithubUrl = () => api(`/api/admin/daily-content?adminUserId=${adminUserId}`).then((content) => { document.querySelector("#admin-github-url").value = content.githubUrl || ""; });
   document.querySelector("#admin-users-refresh").addEventListener("click", loadUsers);
+  document.querySelector("#admin-github-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const status = document.querySelector("#admin-github-status");
+    const githubUrl = document.querySelector("#admin-github-url").value.trim();
+    if (githubUrl && !safeExternalUrl(githubUrl)) { status.textContent = "GitHub URL must start with http:// or https://"; return; }
+    status.textContent = "Saving...";
+    api(`/api/admin/daily-content?adminUserId=${adminUserId}`)
+      .then((content) => api(`/api/admin/daily-content?adminUserId=${adminUserId}`, { method: "POST", body: JSON.stringify({ ...content, githubUrl }) }))
+      .then((content) => { state.githubUrl = content.githubUrl || ""; renderTopActions(); status.textContent = "Saved"; })
+      .catch((error) => { status.textContent = error.message || "Save failed"; });
+  });
   document.querySelector("#admin-content-form").addEventListener("submit", (event) => { event.preventDefault(); const status = document.querySelector("#admin-content-status"); status.textContent = "正在保存…"; api(`/api/admin/daily-content?adminUserId=${adminUserId}`, { method: "POST", body: JSON.stringify({ passwordAz3: document.querySelector("#admin-password-az3").value.trim(), passwordZeroDam: document.querySelector("#admin-password-zero-dam").value.trim(), passwordSpaceCity: document.querySelector("#admin-password-space-city").value.trim(), passwordTidePrison: document.querySelector("#admin-password-tide-prison").value.trim(), passwordBrakkesh: document.querySelector("#admin-password-brakkesh").value.trim(), passwordLongbow: document.querySelector("#admin-password-longbow").value.trim(), aiRecommendation: document.querySelector("#admin-ai-recommendation").value.trim(), aiPrompt: document.querySelector("#admin-ai-prompt").value.trim(), newsContent: document.querySelector("#admin-news-content").value.trim() }) }).then(() => { status.textContent = "已保存"; }).catch((error) => { status.textContent = error.message || "保存失败"; }); });
   document.querySelector("#admin-refresh-form").addEventListener("submit", (event) => { event.preventDefault(); const submit = document.querySelector("#admin-refresh-submit"), result = document.querySelector("#admin-refresh-result"), pages = Number(document.querySelector("#refresh-pages").value); const request = {}; if (document.querySelector("#refresh-kind").value) request.kind = document.querySelector("#refresh-kind").value; if (pages > 0) request.max_pages = pages; if (document.querySelector("#refresh-save-partial").checked) request.save_partial = true; submit.disabled = true; result.textContent = "正在刷新，请勿关闭页面…"; api(`/api/admin/market/refresh?adminUserId=${adminUserId}`, { method: "POST", body: JSON.stringify(request) }).then((data) => { result.textContent = JSON.stringify(data, null, 2); }).catch((error) => { result.textContent = error.message || "刷新失败"; }).finally(() => { submit.disabled = false; }); });
-  loadUsers(); loadContent();
+  loadUsers(); loadContent(); loadGithubUrl();
 }
 
 function blankPage() {
@@ -988,7 +1326,7 @@ function render() {
     "/market": marketPage,
     "/gun-modifier": modifierPage,
     "/knowledge": knowledgePage,
-    "/readiness": blankPage,
+    "/readiness": readinessPage,
     "/news": newsPage,
     "/admin": adminPage,
     "/login": loginPage,
@@ -1002,6 +1340,7 @@ function render() {
 function bindPageEvents(route) {
   if (route === "/chat") bindChat();
   if (route === "/market") bindMarket();
+  if (route === "/readiness") bindReadiness();
   if (route === "/gun-modifier") bindModifier();
   if (route === "/knowledge") bindKnowledge();
   if (route === "/news") bindNews();
@@ -1010,6 +1349,13 @@ function bindPageEvents(route) {
 }
 
 function bindChat() {
+  const archiveToggle = document.querySelector("#archive-toggle-button");
+  archiveToggle.textContent = state.showArchivedSessions ? "查看当前对话" : "查看归档";
+  archiveToggle.addEventListener("click", () => {
+    state.showArchivedSessions = !state.showArchivedSessions;
+    archiveToggle.textContent = state.showArchivedSessions ? "查看当前对话" : "查看归档";
+    loadSessions();
+  });
   document.querySelector("#new-session-button").addEventListener("click", () => {
     state.activeSessionId = "";
     state.reactEvents = [];
@@ -1021,11 +1367,7 @@ function bindChat() {
     renderReactTimeline();
     renderSessionList();
   });
-  document.querySelector("#clear-react-button").addEventListener("click", () => {
-    state.reactEvents = [];
-    state.selectedReactEventId = "";
-    renderReactTimeline();
-  });
+  document.querySelector("#export-react-button").addEventListener("click", exportReactLog);
   loadSessions().then(() => {
     if (state.activeSessionId) loadSessionMessages(state.activeSessionId);
   });
@@ -1060,22 +1402,40 @@ function bindChat() {
 }
 
 function bindMarket() {
+  const renderPage = () => {
+    const total = state.marketItems.length;
+    const pageCount = Math.max(1, Math.ceil(total / MARKET_PAGE_SIZE));
+    state.marketPage = Math.min(Math.max(state.marketPage, 1), pageCount);
+    const start = (state.marketPage - 1) * MARKET_PAGE_SIZE;
+    const pageItems = state.marketItems.slice(start, start + MARKET_PAGE_SIZE);
+    document.querySelector("#market-body").innerHTML = marketRows(pageItems);
+
+    const pagination = document.querySelector("#market-pagination");
+    pagination.hidden = total === 0;
+    document.querySelector("#market-page-info").textContent = total ? `第 ${state.marketPage} / ${pageCount} 页，共 ${total} 件` : "";
+    document.querySelector("#market-prev").disabled = state.marketPage <= 1;
+    document.querySelector("#market-next").disabled = state.marketPage >= pageCount;
+  };
+
   const load = () => {
     const keyword = document.querySelector("#market-search").value.trim();
     const type = document.querySelector("#market-type").value;
-    api(`/api/market/items?limit=200&keyword=${encodeURIComponent(keyword)}&type=${encodeURIComponent(type)}`)
+    state.marketPage = 1;
+    api(`/api/market/items?limit=1000&keyword=${encodeURIComponent(keyword)}&type=${encodeURIComponent(type)}`)
       .then((items) => {
         state.marketItems = items || [];
-        document.querySelector("#market-body").innerHTML = marketRows(state.marketItems);
+        renderPage();
       })
       .catch(() => {
         state.marketItems = mockMarketItems;
-        document.querySelector("#market-body").innerHTML = marketRows(mockMarketItems);
+        renderPage();
       });
   };
   document.querySelector("#market-search").addEventListener("input", load);
   document.querySelector("#market-type").addEventListener("change", load);
   document.querySelector("#market-refresh").addEventListener("click", load);
+  document.querySelector("#market-prev").addEventListener("click", () => { state.marketPage -= 1; renderPage(); });
+  document.querySelector("#market-next").addEventListener("click", () => { state.marketPage += 1; renderPage(); });
   load();
 }
 
@@ -1163,4 +1523,7 @@ function bindAuth() {
 
 menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
 window.addEventListener("hashchange", render);
+applyTheme();
+applyLocale();
 render();
+loadSiteConfig();

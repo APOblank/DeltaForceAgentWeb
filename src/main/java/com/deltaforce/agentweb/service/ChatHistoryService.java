@@ -38,9 +38,9 @@ public class ChatHistoryService {
             return session.writeTransaction(tx -> {
                 Record row = tx.run(
                         "MATCH (u:AgentUser {userId: $userId}) " +
-                                "CREATE (s:AgentChatSession {sessionId: $sessionId, title: $title, createdAt: $now, updatedAt: $now}) " +
+                                "CREATE (s:AgentChatSession {sessionId: $sessionId, title: $title, createdAt: $now, updatedAt: $now, archived: false}) " +
                                 "CREATE (u)-[:OWNS_SESSION]->(s) " +
-                                "RETURN s.sessionId AS sessionId, s.title AS title, s.createdAt AS createdAt, s.updatedAt AS updatedAt",
+                                "RETURN s.sessionId AS sessionId, s.title AS title, s.createdAt AS createdAt, s.updatedAt AS updatedAt, s.archived AS archived",
                         Values.parameters("userId", userId, "sessionId", sessionId, "title", safeTitle, "now", now)
                 ).single();
                 return sessionRow(row);
@@ -48,20 +48,52 @@ public class ChatHistoryService {
         }
     }
 
-    public List<Map<String, Object>> listSessions(String userId) {
+    public List<Map<String, Object>> listSessions(String userId, boolean archived) {
         try (Session session = session()) {
             return session.readTransaction(tx -> {
                 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession) " +
-                                "RETURN s.sessionId AS sessionId, s.title AS title, s.createdAt AS createdAt, s.updatedAt AS updatedAt " +
+                                "WHERE coalesce(s.archived, false) = $archived " +
+                                "RETURN s.sessionId AS sessionId, s.title AS title, s.createdAt AS createdAt, s.updatedAt AS updatedAt, coalesce(s.archived, false) AS archived " +
                                 "ORDER BY s.updatedAt DESC LIMIT 100",
-                        Values.parameters("userId", userId)
+                        Values.parameters("userId", userId, "archived", archived)
                 );
                 while (result.hasNext()) {
                     rows.add(sessionRow(result.next()));
                 }
                 return rows;
+            });
+        }
+    }
+
+    public boolean setSessionArchived(String userId, String sessionId, boolean archived) {
+        try (Session session = session()) {
+            return session.writeTransaction(tx -> {
+                org.neo4j.driver.Result result = tx.run(
+                        "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
+                                "SET s.archived = $archived, s.updatedAt = $now " +
+                                "RETURN s.sessionId AS sessionId",
+                        Values.parameters("userId", userId, "sessionId", sessionId, "archived", archived, "now", Instant.now().toString())
+                );
+                return result.hasNext();
+            });
+        }
+    }
+
+    public boolean deleteSession(String userId, String sessionId) {
+        try (Session session = session()) {
+            return session.writeTransaction(tx -> {
+                org.neo4j.driver.Result result = tx.run(
+                        "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
+                                "OPTIONAL MATCH (s)-[:HAS_MESSAGE]->(m:AgentChatMessage) " +
+                                "WITH s, [message IN collect(m) WHERE message IS NOT NULL] AS messages " +
+                                "FOREACH (message IN messages | DETACH DELETE message) " +
+                                "DETACH DELETE s " +
+                                "RETURN 1 AS deleted",
+                        Values.parameters("userId", userId, "sessionId", sessionId)
+                );
+                return result.hasNext();
             });
         }
     }
@@ -142,6 +174,7 @@ public class ChatHistoryService {
         data.put("title", row.get("title").asString());
         data.put("createdAt", row.get("createdAt").asString());
         data.put("updatedAt", row.get("updatedAt").asString());
+        data.put("archived", !row.get("archived").isNull() && row.get("archived").asBoolean(false));
         return data;
     }
 

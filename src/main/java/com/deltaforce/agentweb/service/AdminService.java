@@ -76,7 +76,9 @@ public class AdminService {
     }
 
     public Map<String, Object> saveDailyContent(Map<String, Object> input) {
-        final Map<String, Object> content = withDefaults(input == null ? new HashMap<String, Object>() : input);
+        Map<String, Object> merged = new HashMap<String, Object>(dailyContent());
+        if (input != null) merged.putAll(input);
+        final Map<String, Object> content = withDefaults(merged);
         content.put("key", "daily");
         content.put("updatedAt", Instant.now().toString());
         try (Session session = session()) {
@@ -101,6 +103,7 @@ public class AdminService {
         data.put("aiRecommendation", editable(source, "aiRecommendation", "今日 AI 改枪推荐待发布"));
         data.put("aiPrompt", editable(source, "aiPrompt", "在此填写用于生成今日改枪推荐的提示词。"));
         data.put("newsContent", editable(source, "newsContent", "更多三角洲今日资讯即将上线。"));
+        data.put("githubUrl", editable(source, "githubUrl", ""));
         data.put("updatedAt", string(source.get("updatedAt"), ""));
         return data;
     }

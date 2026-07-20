@@ -9,6 +9,7 @@ import com.deltaforce.agentweb.model.ChatResponse;
 import com.deltaforce.agentweb.model.GunsmithRequest;
 import com.deltaforce.agentweb.model.ItemPrice;
 import com.deltaforce.agentweb.model.KnowledgeQueryRequest;
+import com.deltaforce.agentweb.model.ReadinessRequest;
 import com.deltaforce.agentweb.service.ChatHistoryService;
 import com.deltaforce.agentweb.service.AdminService;
 import com.deltaforce.agentweb.service.ChatProxyService;
@@ -16,14 +17,17 @@ import com.deltaforce.agentweb.service.GunsmithService;
 import com.deltaforce.agentweb.service.GunModifierService;
 import com.deltaforce.agentweb.service.KnowledgeService;
 import com.deltaforce.agentweb.service.MarketDataService;
+import com.deltaforce.agentweb.service.ReadinessService;
 import com.deltaforce.agentweb.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,6 +47,7 @@ import java.util.concurrent.Executors;
 public class ApiController {
 
     private final MarketDataService marketDataService;
+    private final ReadinessService readinessService;
     private final AdminService adminService;
     private final GunsmithService gunsmithService;
     private final GunModifierService gunModifierService;
@@ -56,6 +61,7 @@ public class ApiController {
 
     public ApiController(
             MarketDataService marketDataService,
+            ReadinessService readinessService,
             AdminService adminService,
             GunsmithService gunsmithService,
             GunModifierService gunModifierService,
@@ -67,6 +73,7 @@ public class ApiController {
             ObjectMapper objectMapper
     ) {
         this.marketDataService = marketDataService;
+        this.readinessService = readinessService;
         this.adminService = adminService;
         this.gunsmithService = gunsmithService;
         this.gunModifierService = gunModifierService;
@@ -138,6 +145,11 @@ public class ApiController {
     @PostMapping("/gunsmith/recommend")
     public Map<String, Object> recommend(@RequestBody GunsmithRequest request) {
         return gunsmithService.recommend(request);
+    }
+
+    @PostMapping("/readiness/plans")
+    public Map<String, Object> readinessPlans(@Valid @RequestBody ReadinessRequest request) {
+        return readinessService.plan(request);
     }
 
     @GetMapping("/gun-modifier/firearms")
@@ -228,8 +240,11 @@ public class ApiController {
     }
 
     @GetMapping("/chat/sessions")
-    public List<Map<String, Object>> chatSessions(@RequestParam String userId) {
-        return chatHistoryService.listSessions(userId);
+    public List<Map<String, Object>> chatSessions(
+            @RequestParam String userId,
+            @RequestParam(defaultValue = "false") boolean archived
+    ) {
+        return chatHistoryService.listSessions(userId, archived);
     }
 
     @PostMapping("/chat/sessions")
@@ -243,5 +258,26 @@ public class ApiController {
             @RequestParam String userId
     ) {
         return chatHistoryService.listMessages(userId, sessionId);
+    }
+
+    @DeleteMapping("/chat/sessions/{sessionId}")
+    public Map<String, Object> deleteChatSession(
+            @PathVariable String sessionId,
+            @RequestParam String userId
+    ) {
+        Map<String, Object> response = new HashMap<String, Object>();
+        response.put("deleted", chatHistoryService.deleteSession(userId, sessionId));
+        return response;
+    }
+
+    @PatchMapping("/chat/sessions/{sessionId}/archive")
+    public Map<String, Object> archiveChatSession(
+            @PathVariable String sessionId,
+            @RequestParam String userId,
+            @RequestParam(defaultValue = "true") boolean archived
+    ) {
+        Map<String, Object> response = new HashMap<String, Object>();
+        response.put("archived", chatHistoryService.setSessionArchived(userId, sessionId, archived));
+        return response;
     }
 }

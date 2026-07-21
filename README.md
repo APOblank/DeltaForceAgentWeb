@@ -56,7 +56,7 @@ src/main/resources/application-local.yml
 
 ## 运行前准备
 
-1. 安装 JDK 8 或兼容版本、Maven 和 Neo4j。
+1. 安装 JDK 17、Maven 3.9+ 和支持多数据库的 Neo4j。
 2. 确保 Neo4j 中存在：
    - 图谱与价格库：`sjzdata`
    - 用户与聊天记录库：`deltaforceusers`
@@ -81,11 +81,31 @@ mvn -s .mvn\settings.xml spring-boot:run
 打包运行：
 
 ```powershell
-mvn -s .mvn\settings.xml -DskipTests package
-java -jar target\delta-force-agent-web-0.1.0.jar
+mvn -s .mvn\settings.xml verify
+java -jar target\delta-force-agent-web-1.0.0.jar
 ```
 
 启动后访问：<http://127.0.0.1:8080/>
+
+### 容器启动
+
+复制 `.env.example` 为 `.env` 并替换所有占位值，然后运行：
+
+```bash
+docker compose up --build
+```
+
+仓库内 Compose 使用 Neo4j Enterprise 评估许可，仅适合本地验证。正式环境应连接已有的 Neo4j Enterprise 或受支持的云端多数据库实例，并遵守对应许可。
+
+### 生产上线
+
+生产环境使用 `SPRING_PROFILES_ACTIVE=prod`，且必须注入 `JWT_SECRET`、数据库密码、管理员初始化账号密码和精确的 `CORS_ALLOWED_ORIGINS`。建议在反向代理或负载均衡器终止 TLS，只开放应用端口，数据库和 AI 辅助服务保持在私有网络。可用探针：
+
+- `/actuator/health/liveness`
+- `/actuator/health/readiness`
+- `/api/health`
+
+数据库结构由 Flyway 自动迁移；构建和测试由 `.github/workflows/ci.yml` 执行。
 
 ## 主要接口
 

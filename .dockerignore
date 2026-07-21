@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.vscode
+.m2
+audit
+data
+target
+.env
+*.iml
+

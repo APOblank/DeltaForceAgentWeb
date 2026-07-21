@@ -52,7 +52,7 @@ public class GunsmithService {
         response.put("preference", request.getPreference());
         response.put("score", parts.isEmpty() ? "B" : "A");
         response.put("parts", parts);
-        response.put("summary", "当前方案基于本地 JSON 价格数据生成；接入完整配件属性后可进一步约束槽位、冲突和属性收益。");
+        response.put("summary", "当前方案基于 Neo4j 图谱中的市场价格生成；接入完整配件属性后可进一步约束槽位、冲突和属性收益。");
         return response;
     }
 

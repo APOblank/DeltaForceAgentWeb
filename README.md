@@ -1,94 +1,122 @@
-# 三角洲行动智能体前端原型
+# Delta Force Agent Web
 
-这是「三角洲行动智能体」前后端原型。前端包含页面样式、mock 回退和基础交互；后端使用 Spring Boot，提供市场数据、AI 改枪推荐、Neo4j 知识库检索和 FastAPI 聊天代理。
+面向《三角洲行动》的智能助手 Web 应用。项目将武器、配件与装备图谱、市场行情、AI 对话和配装工具集中到一个 Spring Boot 应用中，提供市场查询、改枪台、卡战备、知识图谱和今日资讯等功能。
 
-## 页面
+## 主要功能
 
-- `#/` 首页
-- `#/chat` 智能对话
-- `#/market` 市场数据查看
-- `#/gunsmith` AI 改枪推荐
-- `#/login` 登录
+- **智能对话**：通过本地 AI 助手服务进行流式对话，支持会话历史、ReAct 事件展示和改枪结果一键带入改枪台。
+- **市场数据**：从 Neo4j 图谱节点读取当前购买价格、战备价值、涨跌幅、假账及 3/7/30 日行情。
+- **改枪台**：根据 Neo4j 中的枪械、槽位与配件关系选择装配方案，并显示枪械、配件图片和价格。
+- **卡战备**：基于枪械、头盔、护甲、胸挂和背包的价格与战备价值生成组合方案。
+- **知识图谱**：检索节点、查看邻域关系，并提供受限的只读 Cypher 查询。
+- **今日资讯**：展示地图信息和 AI 改枪推荐；推荐中的枪械、配件会自动匹配图片。
+- **账号与会话**：JWT 登录鉴权；用户、聊天会话与历史消息独立存储在 Neo4j 的用户库中。
 
-## 运行
+## 架构
 
-前端正式文件位于 Spring Boot 项目静态资源目录：
+```mermaid
+flowchart LR
+    Browser[浏览器\n静态前端 app.js] -->|REST / SSE| Web[Spring Boot\nDelta Force Agent Web]
+    Web -->|图谱、价格、关系| Graph[(Neo4j: sjzdata)]
+    Web -->|用户与聊天历史| Users[(Neo4j: deltaforceusers)]
+    Web -->|/v1/chat/completions| Agent[AI 助手服务\n127.0.0.1:8000]
+    Admin[管理员刷新市场] -->|POST /api/admin/market/refresh| Web
+    Web -->|POST /refresh| Refresh[行情刷新服务\n127.0.0.1:8010]
+```
+
+### 数据流
+
+1. 浏览器只访问 Spring Boot 的 `/api/**` 接口，静态页面由同一应用提供。
+2. 市场、改枪台、卡战备与简易改枪推荐统一从 `sjzdata` 查询行情节点属性。
+3. 后台“刷新市场”是唯一保留的 `8010` 调用；刷新服务应将新行情同步回 Neo4j。
+4. 聊天请求由 Spring Boot 代理至 AI 助手服务，登录用户的会话与消息写入 `deltaforceusers`。
+
+## 技术栈
+
+- Java 8、Spring Boot 2.7
+- Maven
+- Neo4j Java Driver
+- 原生 HTML / CSS / JavaScript 单页前端
+- SSE 流式响应
+- JWT 鉴权
+
+## 目录说明
 
 ```text
-src/main/resources/static/
+src/main/java/                 Spring Boot 接口、服务与配置
+src/main/resources/static/     前端页面、样式、脚本及图片资源
+  attachment-images/           配件图片
+  firearm-images/              枪械图片
+src/main/resources/data/       枪械、配件基础数据
+src/main/resources/application.yml
+                               可提交的默认配置模板
+src/main/resources/application-local.yml
+                               本地私密配置（已被 Git 忽略）
 ```
 
-请通过 Spring Boot 访问页面，不再使用根目录旧版 `app.js`。
+## 运行前准备
 
-## Spring Boot 后端
+1. 安装 JDK 8 或兼容版本、Maven 和 Neo4j。
+2. 确保 Neo4j 中存在：
+   - 图谱与价格库：`sjzdata`
+   - 用户与聊天记录库：`deltaforceusers`
+3. 在 `src/main/resources/application-local.yml` 配置本机 Neo4j 凭据；不要将该文件或真实密码提交到 Git。
+4. 若需要智能对话，启动 AI 助手服务，默认地址为 `http://127.0.0.1:8000`。
+5. 若需要从后台刷新行情，启动刷新服务，默认地址为 `http://127.0.0.1:8010`。
 
-构建：
+## 启动
 
-```bash
-mvn -s .mvn/settings.xml -DskipTests package
+编译：
+
+```powershell
+mvn -s .mvn\settings.xml -DskipTests compile
 ```
 
-运行：
+开发运行：
 
-```bash
-java -jar target/delta-force-agent-web-0.1.0.jar
+```powershell
+mvn -s .mvn\settings.xml spring-boot:run
 ```
 
-访问：
+打包运行：
 
-```text
-http://127.0.0.1:8080/
+```powershell
+mvn -s .mvn\settings.xml -DskipTests package
+java -jar target\delta-force-agent-web-0.1.0.jar
 ```
 
-后端接口：
+启动后访问：<http://127.0.0.1:8080/>
 
-- `GET /api/health`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/market/items?keyword=&type=&limit=100`
-- `POST /api/gunsmith/recommend`
-- `GET /api/knowledge/search?keyword=&limit=20`
-- `GET /api/knowledge/neighborhood?keyword=&limit=30`
-- `POST /api/knowledge/query`
-- `GET /api/chat/sessions?userId=`
-- `POST /api/chat/sessions`
-- `GET /api/chat/sessions/{sessionId}/messages?userId=`
-- `POST /api/chat`
+## 主要接口
 
-## 配置
+| 功能 | 接口 |
+|---|---|
+| 服务健康检查 | `GET /api/health` |
+| 市场数据 | `GET /api/market/items?keyword=&type=&limit=100` |
+| 后台刷新行情 | `POST /api/admin/market/refresh` |
+| 改枪台枪械列表 | `GET /api/gun-modifier/firearms` |
+| 改枪台枪械详情 | `GET /api/gun-modifier/firearms/{firearmId}` |
+| 卡战备方案 | `POST /api/readiness/plans` |
+| 知识图谱搜索 | `GET /api/knowledge/search` |
+| 图谱邻域 | `GET /api/knowledge/neighborhood` |
+| 只读 Cypher 查询 | `POST /api/knowledge/query` |
+| 流式智能对话 | `POST /api/chat/stream` |
+| 注册与登录 | `POST /api/auth/register`、`POST /api/auth/login` |
+| 会话管理 | `/api/chat/sessions/**` |
 
-默认配置在 `src/main/resources/application.yml`。
+## 行情节点属性
 
-- Neo4j：默认连接 `bolt://localhost:7687`，数据库 `sjzdata`
-- 图谱查询：固定使用 `sjzdata`
-- 图谱可视化：输入关键词后，展示匹配节点与其它节点的直接关系
-- Neo4j Query 工作台接口仍保留：仅允许只读 Cypher，禁止 `CREATE`、`MERGE`、`SET`、`DELETE`、`DROP`、`CALL`、`LOAD CSV` 等语句
-- 用户与会话：默认写入独立 Neo4j 数据库 `deltaforceusers`，节点包括 `AgentUser`、`AgentChatSession`、`AgentChatMessage`
-- 页面权限：首页和市场数据无需登录；智能对话、图谱查询、AI 改枪需要登录后使用
-- FastAPI：默认代理 `http://127.0.0.1:8000/v1/chat/completions`
-- 市场数据：通过 DeltaForceRealTimeData 的 `GET /items` API 获取，默认地址 `http://127.0.0.1:8010`
-- 不会调用 DeltaForceRealTimeData 的 `POST /refresh`，刷新爬虫由外部服务自行管理
-- JSON 数据文件仅保留为历史资源，不再作为市场数据来源
+`sjzdata` 中的枪械、配件和装备节点可提供以下属性：
 
-可通过环境变量覆盖：
+| Neo4j 属性 | API 字段 |
+|---|---|
+| 当前购买价格 | `currentPrice` |
+| 战备价值 | `combatPrice` |
+| 今日涨跌幅 | `todayChangePercent` |
+| 当前假账数值 | `currentFakeAccount` |
+| 假账数值占比 | `fakeAccountRatioPercent` |
+| 3日价格 / 3日涨跌幅 | `price3d` / `change3dPercent` |
+| 7日价格 / 7日涨跌幅 | `price7d` / `change7dPercent` |
+| 30日价格 / 30日涨跌幅 | `price30d` / `change30dPercent` |
 
-```bash
-SERVER_PORT=8080
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-password
-NEO4J_DATABASE=sjzdata
-NEO4J_USER_DATABASE=deltaforceusers
-DELTA_FORCE_HELPER_BASE_URL=http://127.0.0.1:8000
-DELTA_FORCE_HELPER_API_KEY=
-DELTA_FORCE_HELPER_MODEL=DF_agent
-DELTA_FORCE_REALTIME_BASE_URL=http://127.0.0.1:8010
-```
-
-## 后续接入点
-
-后续接入时，优先替换 `src/main/resources/static/app.js` 中的 mock 数据与页面事件：
-
-- `marketItems`：市场物品、价格、涨跌、热度
-- `loadout`：AI 改枪推荐结果
-- `chat-form` submit 事件：智能体对话接口
+装备节点通过 `维修_装备类别`（或类型、类别等兼容字段）识别为头盔、护甲、胸挂和背包。

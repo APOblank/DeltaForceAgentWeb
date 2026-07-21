@@ -1,15 +1,23 @@
 package com.deltaforce.agentweb.model;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 public class ChatRequest {
 
     @NotBlank(message = "message cannot be blank")
+    @Size(max = 12000, message = "单条消息不能超过 12000 个字符")
     private String message;
     private Boolean debug;
     private Boolean reactEvents;
+    @Size(max = 64, message = "sessionId 过长")
+    @Pattern(regexp = "^[A-Za-z0-9._:-]*$", message = "sessionId 格式不合法")
     private String sessionId;
+    @Size(max = 64, message = "messageId 过长")
+    @Pattern(regexp = "^[A-Za-z0-9._:-]*$", message = "messageId 格式不合法")
     private String messageId;
+    @Pattern(regexp = "^(auto|plan|execute)?$", message = "conversationMode 不受支持")
     private String conversationMode;
 
     public String getMessage() {

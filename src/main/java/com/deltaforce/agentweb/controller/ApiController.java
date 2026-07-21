@@ -1,6 +1,5 @@
 package com.deltaforce.agentweb.controller;
 
-import com.deltaforce.agentweb.config.AppProperties;
 import com.deltaforce.agentweb.model.AuthRequest;
 import com.deltaforce.agentweb.model.AuthResponse;
 import com.deltaforce.agentweb.model.ChatSessionRequest;
@@ -36,15 +35,17 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.UUID;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import com.deltaforce.agentweb.config.JwtAuthenticationInterceptor;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.ResponseEntity;
 
 @Validated
 @RestController
@@ -60,9 +61,8 @@ public class ApiController {
     private final ChatProxyService chatProxyService;
     private final UserService userService;
     private final ChatHistoryService chatHistoryService;
-    private final AppProperties properties;
     private final ObjectMapper objectMapper;
-    private final ExecutorService chatStreamExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService chatStreamExecutor;
 
     public ApiController(
             MarketDataService marketDataService,
@@ -74,8 +74,8 @@ public class ApiController {
             ChatProxyService chatProxyService,
             UserService userService,
             ChatHistoryService chatHistoryService,
-            AppProperties properties,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            @Qualifier("chatStreamExecutor") ExecutorService chatStreamExecutor
     ) {
         this.marketDataService = marketDataService;
         this.readinessService = readinessService;
@@ -86,27 +86,27 @@ public class ApiController {
         this.chatProxyService = chatProxyService;
         this.userService = userService;
         this.chatHistoryService = chatHistoryService;
-        this.properties = properties;
         this.objectMapper = objectMapper;
+        this.chatStreamExecutor = chatStreamExecutor;
     }
 
     @GetMapping("/health")
-    public Map<String, Object> health() {
+    public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> response = new HashMap<String, Object>();
-        response.put("ok", true);
         response.put("service", "DeltaForceAgentWeb");
-        response.put("neo4j", knowledgeService.health());
-        response.put("knowledgeDatabase", properties.getNeo4j().getDatabase());
-        response.put("userDatabase", properties.getNeo4j().getUserDatabase());
+        Map<String, Object> neo4j = knowledgeService.health();
+        boolean ok = Boolean.TRUE.equals(neo4j.get("ok"));
+        response.put("neo4j", ok ? "ok" : "unavailable");
         try {
             response.put("marketItems", marketDataService.all().size());
             response.put("marketData", "ok");
         } catch (Exception ex) {
+            ok = false;
             response.put("marketItems", 0);
             response.put("marketData", "unavailable");
-            response.put("marketDataError", ex.getMessage());
         }
-        return response;
+        response.put("ok", ok);
+        return ResponseEntity.status(ok ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }
 
     @GetMapping("/market/items")
@@ -148,7 +148,7 @@ public class ApiController {
     }
 
     @PostMapping("/gunsmith/recommend")
-    public Map<String, Object> recommend(@RequestBody GunsmithRequest request) {
+    public Map<String, Object> recommend(@Valid @RequestBody GunsmithRequest request) {
         return gunsmithService.recommend(request);
     }
 
@@ -170,8 +170,10 @@ public class ApiController {
     @GetMapping("/knowledge/search")
     public List<Map<String, Object>> searchKnowledge(
             @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "20") int limit
+            @RequestParam(defaultValue = "20") int limit,
+            HttpServletRequest request
     ) {
+        requireUser(request);
         return knowledgeService.search(keyword, limit);
     }
 
@@ -179,13 +181,16 @@ public class ApiController {
     public Map<String, Object> knowledgeNeighborhood(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Long centerId,
-            @RequestParam(defaultValue = "30") int limit
+            @RequestParam(defaultValue = "30") int limit,
+            HttpServletRequest request
     ) {
+        requireUser(request);
         return knowledgeService.neighborhood(keyword, centerId, limit);
     }
 
     @PostMapping("/knowledge/query")
-    public Map<String, Object> queryKnowledge(@Valid @RequestBody KnowledgeQueryRequest request) {
+    public Map<String, Object> queryKnowledge(@Valid @RequestBody KnowledgeQueryRequest request, HttpServletRequest httpRequest) {
+        requireUser(httpRequest);
         int limit = request.getLimit() == null ? 100 : request.getLimit();
         return knowledgeService.query(request.getQuery(), limit);
     }
@@ -194,11 +199,9 @@ public class ApiController {
     public ChatResponse chat(@Valid @RequestBody ChatRequest request, HttpServletRequest httpRequest) {
         String sessionId = null;
         String messageId = StringUtils.hasText(request.getMessageId()) ? request.getMessageId() : UUID.randomUUID().toString();
-        String userId = optionalUser(httpRequest);
-        if (StringUtils.hasText(userId)) {
-            sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
-            chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
-        }
+        String userId = requireUser(httpRequest);
+        sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
+        chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
         ChatResponse response = chatProxyService.chat(request.getMessage(), request.getDebug(), request.getReactEvents(), userId, sessionId, messageId, request.getConversationMode());
         response.setSessionId(StringUtils.hasText(sessionId) ? sessionId : response.getSessionId());
         if (StringUtils.hasText(userId) && StringUtils.hasText(sessionId)) {
@@ -210,19 +213,19 @@ public class ApiController {
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@Valid @RequestBody ChatRequest request, HttpServletRequest httpRequest) {
-        SseEmitter emitter = new SseEmitter(0L);
+        SseEmitter emitter = new SseEmitter(120_000L);
+        emitter.onTimeout(emitter::complete);
         String sessionId = null;
         String messageId = StringUtils.hasText(request.getMessageId()) ? request.getMessageId() : UUID.randomUUID().toString();
-        String userId = optionalUser(httpRequest);
-        if (StringUtils.hasText(userId)) {
-            sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
-            chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
-        }
+        String userId = requireUser(httpRequest);
+        sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
+        chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
 
         final String finalSessionId = sessionId;
         final String finalUserId = userId;
-        chatStreamExecutor.execute(() -> {
-            try {
+        try {
+            chatStreamExecutor.execute(() -> {
+                try {
                 Map<String, Object> sessionEvent = new HashMap<String, Object>();
                 sessionEvent.put("sessionId", finalSessionId);
                 emitter.send(SseEmitter.event().name("session").data(objectMapper.writeValueAsString(sessionEvent)));
@@ -232,10 +235,13 @@ public class ApiController {
                     }
                     return "";
                 });
-            } catch (Exception ex) {
-                emitter.completeWithError(ex);
-            }
-        });
+                } catch (Exception ex) {
+                    emitter.completeWithError(ex);
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "当前对话请求较多，请稍后重试");
+        }
         return emitter;
     }
 

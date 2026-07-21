@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.regex.Pattern;
 
 @Component
@@ -39,7 +39,7 @@ public class StatsDatabaseInitializer {
         if (ready) return;
         String database = database();
         try (Session system = driver.session(SessionConfig.forDatabase("system"))) {
-            system.writeTransaction(tx -> {
+            system.executeWrite(tx -> {
                 tx.run("CREATE DATABASE `" + database + "` IF NOT EXISTS WAIT").consume();
                 return null;
             });
@@ -50,7 +50,7 @@ public class StatsDatabaseInitializer {
         }
 
         try (Session session = driver.session(SessionConfig.forDatabase(database))) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("CREATE CONSTRAINT stats_user_id IF NOT EXISTS FOR (u:StatsUser) REQUIRE u.userId IS UNIQUE").consume();
                 tx.run("CREATE CONSTRAINT stats_account_id IF NOT EXISTS FOR (a:GameAccount) REQUIRE a.id IS UNIQUE").consume();
                 tx.run("CREATE CONSTRAINT stats_battle_id IF NOT EXISTS FOR (b:Battle) REQUIRE b.id IS UNIQUE").consume();

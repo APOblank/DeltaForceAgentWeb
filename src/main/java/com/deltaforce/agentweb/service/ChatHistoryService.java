@@ -35,7 +35,7 @@ public class ChatHistoryService {
         String now = Instant.now().toString();
         String safeTitle = StringUtils.hasText(title) ? title.trim() : "新的对话";
         try (Session session = session()) {
-            return session.writeTransaction(tx -> {
+            return session.executeWrite(tx -> {
                 Record row = tx.run(
                         "MATCH (u:AgentUser {userId: $userId}) " +
                                 "CREATE (s:AgentChatSession {sessionId: $sessionId, title: $title, createdAt: $now, updatedAt: $now, archived: false}) " +
@@ -50,7 +50,7 @@ public class ChatHistoryService {
 
     public List<Map<String, Object>> listSessions(String userId, boolean archived) {
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession) " +
@@ -69,7 +69,7 @@ public class ChatHistoryService {
 
     public boolean setSessionArchived(String userId, String sessionId, boolean archived) {
         try (Session session = session()) {
-            return session.writeTransaction(tx -> {
+            return session.executeWrite(tx -> {
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
                                 "SET s.archived = $archived, s.updatedAt = $now " +
@@ -83,7 +83,7 @@ public class ChatHistoryService {
 
     public boolean deleteSession(String userId, String sessionId) {
         try (Session session = session()) {
-            return session.writeTransaction(tx -> {
+            return session.executeWrite(tx -> {
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
                                 "OPTIONAL MATCH (s)-[:HAS_MESSAGE]->(m:AgentChatMessage) " +
@@ -102,7 +102,7 @@ public class ChatHistoryService {
 
     public List<Map<String, Object>> listMessages(String userId, String sessionId) {
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
@@ -144,7 +144,7 @@ public class ChatHistoryService {
         String reactEventsJson = toJson(reactEvents);
         boolean hasReact = StringUtils.hasText(reactEventsJson) && !"[]".equals(reactEventsJson);
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
                                 "CREATE (m:AgentChatMessage {messageId: $messageId, role: $role, content: $content, " +
@@ -170,7 +170,7 @@ public class ChatHistoryService {
 
     public List<Map<String, Object>> listTasks(String userId, String sessionId) {
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 List<Map<String, Object>> tasks = new ArrayList<Map<String, Object>>();
                 org.neo4j.driver.Result result = tx.run(
                         "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
@@ -191,7 +191,7 @@ public class ChatHistoryService {
 
     public boolean cancelTask(String userId, String sessionId, String taskId) {
         try (Session session = session()) {
-            return session.writeTransaction(tx -> tx.run(
+            return session.executeWrite(tx -> tx.run(
                     "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId})-[:HAS_TASK]->(t:AgentTask) " +
                             "WHERE coalesce(t.taskId, t.task_id, t.id) = $taskId " +
                             "SET t.status = 'cancelled', t.cancelledAt = $now, t.updatedAt = $now " +
@@ -206,7 +206,7 @@ public class ChatHistoryService {
             return false;
         }
         try (Session session = session()) {
-            return session.readTransaction(tx -> tx.run(
+            return session.executeRead(tx -> tx.run(
                     "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) RETURN s.sessionId AS sessionId",
                     Values.parameters("userId", userId, "sessionId", sessionId)
             ).hasNext());

@@ -60,7 +60,7 @@ class DataCenterServiceTest {
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.battleDetail("user-a", battleB));
-        assertEquals(HttpStatus.NOT_FOUND, error.getStatus());
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
     }
 
     @Test

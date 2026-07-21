@@ -1,48 +1,96 @@
 server:
   port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: framework
+  max-http-request-header-size: 16KB
+  compression:
+    enabled: true
+    min-response-size: 1024
+    mime-types: application/json,text/html,text/css,text/javascript,application/javascript,image/svg+xml
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
 
 spring:
   application:
     name: delta-force-agent-web
   profiles:
-    default: local
+    default: dev
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   datasource:
-    # 默认使用项目 data/ 目录下的内嵌数据库；生产环境可通过环境变量切换 PostgreSQL。
-    url: ${STATS_DATABASE_URL:jdbc:h2:file:./data/delta-force-stats;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
-    username: ${STATS_DATABASE_USER:sa}
+    url: ${STATS_DATABASE_URL:}
+    username: ${STATS_DATABASE_USER:}
     password: ${STATS_DATABASE_PASSWORD:}
-    driver-class-name: ${STATS_DATABASE_DRIVER:org.h2.Driver}
+    driver-class-name: ${STATS_DATABASE_DRIVER:org.postgresql.Driver}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: 5000
+      validation-timeout: 3000
   sql:
     init:
-      mode: always
+      mode: never
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 105MB
+  mvc:
+    async:
+      request-timeout: 120s
   jackson:
     default-property-inclusion: non_null
 
 delta-force:
   fastapi:
-    base-url: http://127.0.0.1:8000
-    api-key: ""
-    model: DF_agent
+    base-url: ${FASTAPI_BASE_URL:http://127.0.0.1:8000}
+    api-key: ${FASTAPI_API_KEY:}
+    model: ${FASTAPI_MODEL:DF_agent}
   realtime-data:
-    base-url: http://127.0.0.1:8010
+    base-url: ${REALTIME_DATA_BASE_URL:http://127.0.0.1:8010}
   neo4j:
-    uri: bolt://localhost:7687
-    user: neo4j
-    password: CHANGE_ME
-    database: sjzdata
-    user-database: deltaforceusers
-    # 个人战绩专用多租户数据库；所有查询仍必须通过 JWT userId 做租户隔离。
-    stats-database: sjzuserdata
-    # 首次切换时将旧 H2/PostgreSQL 战绩幂等迁移到 Neo4j，完成后写入迁移标记。
-    stats-migration-enabled: true
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    user: ${NEO4J_USER:neo4j}
+    password: ${NEO4J_PASSWORD:}
+    database: ${NEO4J_KNOWLEDGE_DATABASE:sjzdata}
+    user-database: ${NEO4J_USER_DATABASE:deltaforceusers}
+    stats-database: ${NEO4J_STATS_DATABASE:sjzuserdata}
+    stats-migration-enabled: ${STATS_MIGRATION_ENABLED:true}
   security:
-    # 生产环境必须替换为至少 32 位的高强度随机密钥，并妥善保管。
-    jwt-secret: CHANGE_ME_TO_A_LONG_RANDOM_JWT_SECRET_32_CHARS
-    jwt-ttl-seconds: 86400
+    jwt-secret: ${JWT_SECRET:}
+    jwt-ttl-seconds: ${JWT_TTL_SECONDS:3600}
+    jwt-issuer: ${JWT_ISSUER:delta-force-agent-web}
+    jwt-audience: ${JWT_AUDIENCE:delta-force-agent}
     cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:http://127.0.0.1:8080,http://localhost:8080}
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+    require-https: ${REQUIRE_HTTPS:false}
+    bootstrap-admin-username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    bootstrap-admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+    knowledge-query-timeout-seconds: ${KNOWLEDGE_QUERY_TIMEOUT_SECONDS:3}
+  rate-limits:
+    auth-per-minute: ${RATE_LIMIT_AUTH:10}
+    chat-per-minute: ${RATE_LIMIT_CHAT:20}
+    knowledge-query-per-minute: ${RATE_LIMIT_KNOWLEDGE:30}
+    general-api-per-minute: ${RATE_LIMIT_GENERAL:600}
   data:
     firearms: classpath:data/orzice_firearms.json
     attachments: classpath:data/orzice_attachments.json
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
 
 logging:
   level:

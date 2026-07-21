@@ -54,7 +54,7 @@ class Neo4jDataCenterLiveIntegrationTest {
             String battleB = String.valueOf(firstRow(rowsB).get("id"));
             ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
                     () -> service.battleDetail(userA, battleB));
-            assertEquals(HttpStatus.NOT_FOUND, forbidden.getStatus());
+            assertEquals(HttpStatus.NOT_FOUND, forbidden.getStatusCode());
 
             Map<String, Object> repeated = service.importData(userA, payload("player-a", "Alpha", 9999, 7));
             assertEquals(0, repeated.get("insertedBattles"));

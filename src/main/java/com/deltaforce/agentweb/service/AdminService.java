@@ -8,6 +8,8 @@ import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Values;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,7 +21,6 @@ import java.util.Map;
 @Service
 public class AdminService {
 
-    private static final String ADMIN_USERNAME = "admin";
     private final Driver driver;
     private final AppProperties properties;
 
@@ -30,20 +31,21 @@ public class AdminService {
 
     public void requireAdmin(String userId) {
         try (Session session = session()) {
-            boolean allowed = session.readTransaction(tx -> tx.run(
-                    "MATCH (u:AgentUser {userId: $userId}) RETURN u.username = $admin AS allowed",
-                    Values.parameters("userId", userId, "admin", ADMIN_USERNAME)
+            boolean allowed = session.executeRead(tx -> tx.run(
+                    "MATCH (u:AgentUser {userId: $userId}) RETURN u.role = 'ADMIN' AS allowed",
+                    Values.parameters("userId", userId)
             ).single().get("allowed").asBoolean(false));
-            if (!allowed) throw new IllegalArgumentException("仅管理员账户可使用此功能");
+            if (!allowed) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员账户可使用此功能");
         }
     }
 
     public List<Map<String, Object>> users() {
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 Result result = tx.run(
                         "MATCH (u:AgentUser) OPTIONAL MATCH (u)-[:OWNS_SESSION]->(s:AgentChatSession) "
                                 + "RETURN u.userId AS userId, u.username AS username, u.displayName AS displayName, "
+                                + "coalesce(u.role, 'USER') AS role, "
                                 + "u.createdAt AS createdAt, u.updatedAt AS updatedAt, u.lastLoginAt AS lastLoginAt, count(s) AS sessionCount "
                                 + "ORDER BY u.createdAt DESC"
                 );
@@ -54,6 +56,7 @@ public class AdminService {
                     item.put("userId", row.get("userId").asString(""));
                     item.put("username", row.get("username").asString(""));
                     item.put("displayName", row.get("displayName").asString(""));
+                    item.put("role", row.get("role").asString("USER"));
                     item.put("createdAt", row.get("createdAt").asString(""));
                     item.put("updatedAt", row.get("updatedAt").asString(""));
                     item.put("lastLoginAt", row.get("lastLoginAt").asString(""));
@@ -67,7 +70,7 @@ public class AdminService {
 
     public Map<String, Object> dailyContent() {
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 Result result = tx.run("MATCH (c:AdminDailyContent {key: 'daily'}) RETURN properties(c) AS content LIMIT 1");
                 if (result.hasNext()) return withDefaults(result.next().get("content").asMap());
                 return withDefaults(new HashMap<String, Object>());
@@ -82,7 +85,7 @@ public class AdminService {
         content.put("key", "daily");
         content.put("updatedAt", Instant.now().toString());
         try (Session session = session()) {
-            return session.writeTransaction(tx -> {
+            return session.executeWrite(tx -> {
                 Record row = tx.run(
                         "MERGE (c:AdminDailyContent {key: 'daily'}) SET c += $content RETURN properties(c) AS content",
                         Values.parameters("content", content)

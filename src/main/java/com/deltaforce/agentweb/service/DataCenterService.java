@@ -16,6 +16,8 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -144,24 +146,30 @@ public class DataCenterService {
     public Map<String, Object> importLegacyBackup(String userId, byte[] zipBytes) {
         if (zipBytes == null || zipBytes.length == 0) throw badRequest("备份文件内容为空");
         if (zipBytes.length > 100 * 1024 * 1024) throw badRequest("备份文件不能超过 100MB");
+        return importLegacyBackup(userId, new ByteArrayInputStream(zipBytes));
+    }
+
+    @Transactional
+    public Map<String, Object> importLegacyBackup(String userId, InputStream zipStream) {
+        if (zipStream == null) throw badRequest("备份文件内容为空");
         Path sqliteFile = null;
         try {
             sqliteFile = Files.createTempFile("delta-force-import-", ".sqlite3");
             boolean found = false;
-            try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            try (ZipInputStream zip = new ZipInputStream(zipStream)) {
                 ZipEntry entry;
                 while ((entry = zip.getNextEntry()) != null) {
                     if (!entry.isDirectory() && "database.sqlite3".equals(entry.getName())) {
-                        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
                         byte[] chunk = new byte[8192];
                         int read;
                         int total = 0;
-                        while ((read = zip.read(chunk)) >= 0) {
-                            total += read;
-                            if (total > 250 * 1024 * 1024) throw badRequest("备份数据库解压后不能超过 250MB");
-                            buffer.write(chunk, 0, read);
+                        try (OutputStream output = Files.newOutputStream(sqliteFile)) {
+                            while ((read = zip.read(chunk)) >= 0) {
+                                total += read;
+                                if (total > 250 * 1024 * 1024) throw badRequest("备份数据库解压后不能超过 250MB");
+                                output.write(chunk, 0, read);
+                            }
                         }
-                        Files.write(sqliteFile, buffer.toByteArray());
                         found = true;
                         break;
                     }

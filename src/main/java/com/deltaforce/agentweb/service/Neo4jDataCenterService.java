@@ -6,13 +6,14 @@ import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
-import org.neo4j.driver.Transaction;
+import org.neo4j.driver.TransactionContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -47,7 +48,7 @@ public class Neo4jDataCenterService {
     public List<Map<String, Object>> accounts(String userId) {
         requireUserId(userId);
         try (Session session = session()) {
-            return session.readTransaction(tx -> queryMaps(tx,
+            return session.executeRead(tx -> queryMaps(tx,
                     "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(a:GameAccount {ownerUserId:$userId}) " +
                             "RETURN a{.*} AS value ORDER BY a.active DESC, a.updatedAt DESC",
                     params("userId", userId), "value", "ownerUserId"));
@@ -57,7 +58,7 @@ public class Neo4jDataCenterService {
     public Map<String, Object> selectAccount(String userId, String accountId) {
         requireAccount(userId, accountId);
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(a:GameAccount {ownerUserId:$userId}) SET a.active=false",
                         params("userId", userId)).consume();
                 tx.run("MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(a:GameAccount {id:$accountId,ownerUserId:$userId}) " +
@@ -72,7 +73,7 @@ public class Neo4jDataCenterService {
     public Map<String, Object> deleteAccount(String userId, String accountId) {
         requireAccount(userId, accountId);
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 Map<String, Object> p = params("userId", userId, "accountId", accountId);
                 tx.run("MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(a:GameAccount {id:$accountId,ownerUserId:$userId})" +
                         "-[:HAS_BATTLE]->(:Battle)-[:HAS_PLAYER]->(x:BattlePlayer {ownerUserId:$userId}) DETACH DELETE x", p).consume();
@@ -117,7 +118,7 @@ public class Neo4jDataCenterService {
         final List<Object> battles = listValue(first(payload, "battles", "records", "data"));
         final int[] counts = new int[4];
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("MERGE (u:StatsUser {userId:$userId}) ON CREATE SET u.createdAt=$now SET u.updatedAt=$now",
                         params("userId", userId, "now", now())).consume();
                 tx.run("MATCH (u:StatsUser {userId:$userId}) OPTIONAL MATCH (u)-[:OWNS_ACCOUNT]->(old:GameAccount {ownerUserId:$userId}) " +
@@ -168,6 +169,12 @@ public class Neo4jDataCenterService {
         return result;
     }
 
+    public Map<String, Object> importLegacyBackup(String userId, InputStream zipStream) {
+        Map<String, Object> result = legacyStore.importLegacyBackup(userId, zipStream);
+        migrateUserFromLegacyStore(userId);
+        return result;
+    }
+
     public Map<String, Object> summary(String userId, String requestedAccountId) {
         Map<String, Object> account = resolveAccount(userId, requestedAccountId);
         Map<String, Object> result = emptySummary();
@@ -191,7 +198,7 @@ public class Neo4jDataCenterService {
         result.put("averageProfit", total == 0 ? 0 : Math.round(profit / (double) total));
         result.put("activeAccount", account);
         try (Session session = session()) {
-            long itemCount = session.readTransaction(tx -> tx.run(
+            long itemCount = session.executeRead(tx -> tx.run(
                     "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(:GameAccount {id:$accountId,ownerUserId:$userId})" +
                             "-[:HAS_BATTLE]->(:Battle {ownerUserId:$userId})-[:HAS_ITEM]->(i:BattleItem {ownerUserId:$userId}) RETURN count(i) AS total",
                     params("userId", userId, "accountId", account.get("id"))).single().get("total").asLong());
@@ -222,7 +229,7 @@ public class Neo4jDataCenterService {
         String match = "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(:GameAccount {id:$accountId,ownerUserId:$userId})" +
                 "-[:HAS_BATTLE]->(b:Battle)" + where;
         try (Session session = session()) {
-            session.readTransaction(tx -> {
+            session.executeRead(tx -> {
                 out.put("total", tx.run(match + " RETURN count(b) AS total", p).single().get("total").asLong());
                 List<Map<String, Object>> rows = queryMaps(tx,
                         match + " OPTIONAL MATCH (b)-[:HAS_ITEM]->(i:BattleItem {ownerUserId:$userId}) " +
@@ -246,7 +253,7 @@ public class Neo4jDataCenterService {
         Map<String, Object> battle = requireBattle(userId, battleId);
         Map<String, Object> p = params("userId", userId, "battleId", battleId);
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 List<Map<String, Object>> players = queryMaps(tx,
                         "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(:GameAccount)-[:HAS_BATTLE]->" +
                                 "(:Battle {id:$battleId,ownerUserId:$userId})-[:HAS_PLAYER]->(x:BattlePlayer {ownerUserId:$userId}) " +
@@ -312,7 +319,7 @@ public class Neo4jDataCenterService {
         if (StringUtils.hasText(start)) { where.append(" AND b.eventTime >= $start"); p.put("start", normalizeBoundary(start, false)); }
         if (StringUtils.hasText(end)) { where.append(" AND b.eventTime <= $end"); p.put("end", normalizeBoundary(end, true)); }
         try (Session session = session()) {
-            List<Map<String, Object>> data = session.readTransaction(tx -> queryMaps(tx,
+            List<Map<String, Object>> data = session.executeRead(tx -> queryMaps(tx,
                     "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(:GameAccount {id:$accountId,ownerUserId:$userId})" +
                             "-[:HAS_BATTLE]->(b:Battle)-[:HAS_ITEM]->(i:BattleItem)" + where +
                             " WITH i.itemId AS itemId,i.itemName AS itemName,i.grade AS grade,sum(i.quantity) AS quantity," +
@@ -356,7 +363,7 @@ public class Neo4jDataCenterService {
             deleteAccount(userId, String.valueOf(account.get("id")));
         }
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("MATCH (u:StatsUser {userId:$userId}) WHERE NOT (u)-[:OWNS_ACCOUNT]->() DETACH DELETE u",
                         params("userId", userId)).consume();
                 return null;
@@ -392,7 +399,7 @@ public class Neo4jDataCenterService {
 
     public boolean migrationCompleted(String marker) {
         try (Session session = session()) {
-            return session.readTransaction(tx -> tx.run(
+            return session.executeRead(tx -> tx.run(
                     "MATCH (m:StatsMigration {id:$id}) RETURN count(m)>0 AS done", params("id", marker))
                     .single().get("done").asBoolean());
         }
@@ -400,7 +407,7 @@ public class Neo4jDataCenterService {
 
     public void markMigrationCompleted(String marker) {
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("MERGE (m:StatsMigration {id:$id}) SET m.completedAt=$now",
                         params("id", marker, "now", now())).consume();
                 return null;
@@ -408,7 +415,7 @@ public class Neo4jDataCenterService {
         }
     }
 
-    private void replaceChildren(Transaction tx, String userId, String battleId, String selfPlayerId,
+    private void replaceChildren(TransactionContext tx, String userId, String battleId, String selfPlayerId,
                                  Map<String, Object> battle, int battleIndex) {
         Map<String, Object> p = params("userId", userId, "battleId", battleId);
         tx.run("MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(:GameAccount)-[:HAS_BATTLE]->" +
@@ -513,7 +520,7 @@ public class Neo4jDataCenterService {
         requireUserId(userId);
         if (!StringUtils.hasText(accountId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "游戏账号不存在");
         try (Session session = session()) {
-            List<Map<String, Object>> rows = session.readTransaction(tx -> queryMaps(tx,
+            List<Map<String, Object>> rows = session.executeRead(tx -> queryMaps(tx,
                     "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(a:GameAccount {id:$accountId,ownerUserId:$userId}) RETURN a{.*} AS value",
                     params("userId", userId, "accountId", accountId), "value", "ownerUserId"));
             if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "游戏账号不存在");
@@ -524,7 +531,7 @@ public class Neo4jDataCenterService {
     private Map<String, Object> requireBattle(String userId, String battleId) {
         requireUserId(userId);
         try (Session session = session()) {
-            List<Map<String, Object>> rows = session.readTransaction(tx -> queryMaps(tx,
+            List<Map<String, Object>> rows = session.executeRead(tx -> queryMaps(tx,
                     "MATCH (:StatsUser {userId:$userId})-[:OWNS_ACCOUNT]->(:GameAccount {ownerUserId:$userId})" +
                             "-[:HAS_BATTLE]->(b:Battle {id:$battleId,ownerUserId:$userId}) RETURN b{.*} AS value",
                     params("userId", userId, "battleId", battleId), "value", "ownerUserId"));
@@ -543,7 +550,7 @@ public class Neo4jDataCenterService {
         if (StringUtils.hasText(end)) { query.append(" AND b.eventTime <= $end"); p.put("end", normalizeBoundary(end, true)); }
         query.append(" RETURN b{.*} AS value ORDER BY b.eventTime ASC");
         try (Session session = session()) {
-            return session.readTransaction(tx -> queryMaps(tx, query.toString(), p, "value", "ownerUserId"));
+            return session.executeRead(tx -> queryMaps(tx, query.toString(), p, "value", "ownerUserId"));
         }
     }
 
@@ -564,7 +571,7 @@ public class Neo4jDataCenterService {
         return driver.session(SessionConfig.forDatabase(initializer.database()));
     }
 
-    private List<Map<String, Object>> queryMaps(Transaction tx, String query, Map<String, Object> params,
+    private List<Map<String, Object>> queryMaps(TransactionContext tx, String query, Map<String, Object> params,
                                                 String column, String... remove) {
         Result result = tx.run(query, params);
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();

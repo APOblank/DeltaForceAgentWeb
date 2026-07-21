@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
 import java.util.Map;
 
@@ -56,8 +56,11 @@ public class DataCenterController {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择数据中心 ZIP 备份");
         }
+        if (file.getSize() > 100L * 1024 * 1024) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "备份文件不能超过 100MB");
+        }
         try {
-            return service.importLegacyBackup(requireUser(request), file.getBytes());
+            return service.importLegacyBackup(requireUser(request), file.getInputStream());
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {

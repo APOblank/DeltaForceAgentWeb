@@ -72,7 +72,7 @@ public class MarketDataService {
 
     /** The sole remaining call to the independent real-time service. */
     public Map<String, Object> refresh(Map<String, Object> request) {
-        URI uri = UriComponentsBuilder.fromHttpUrl(refreshBaseUrl() + "/refresh").build().toUri();
+        URI uri = UriComponentsBuilder.fromUriString(refreshBaseUrl() + "/refresh").build().toUri();
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restTemplate.postForObject(
@@ -90,7 +90,7 @@ public class MarketDataService {
                 + "RETURN labels(n) AS labels, properties(n) AS props";
         List<ItemPrice> output = new ArrayList<ItemPrice>();
         try (Session session = driver.session(SessionConfig.forDatabase(properties.getNeo4j().getDatabase()))) {
-            List<Record> rows = session.readTransaction(tx -> tx.run(
+            List<Record> rows = session.executeRead(tx -> tx.run(
                     cypher, Values.parameters("priceProperties", PRICE_PROPERTIES)
             ).list());
             for (Record row : rows) {

@@ -10,8 +10,9 @@ import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Values;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -20,21 +21,27 @@ import java.util.UUID;
 @Service
 public class UserService {
 
+    public static final String ROLE_USER = "USER";
+    public static final String ROLE_ADMIN = "ADMIN";
+
     private final Driver driver;
     private final AppProperties properties;
     private final JwtService jwtService;
+    private final BCryptPasswordEncoder passwordEncoder;
 
     public UserService(Driver driver, AppProperties properties, JwtService jwtService) {
         this.driver = driver;
         this.properties = properties;
         this.jwtService = jwtService;
+        int configuredStrength = properties.getSecurity().getBcryptStrength();
+        this.passwordEncoder = new BCryptPasswordEncoder(Math.max(10, Math.min(15, configuredStrength)));
     }
 
     @PostConstruct
     public void ensureConstraints() {
         ensureUserDatabase();
         try (Session session = session()) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("CREATE CONSTRAINT agent_user_id IF NOT EXISTS FOR (u:AgentUser) REQUIRE u.userId IS UNIQUE").consume();
                 tx.run("CREATE CONSTRAINT agent_user_name IF NOT EXISTS FOR (u:AgentUser) REQUIRE u.username IS UNIQUE").consume();
                 tx.run("CREATE CONSTRAINT agent_session_id IF NOT EXISTS FOR (s:AgentChatSession) REQUIRE s.sessionId IS UNIQUE").consume();
@@ -52,7 +59,7 @@ public class UserService {
             return;
         }
         try (Session session = driver.session(SessionConfig.forDatabase("system"))) {
-            session.writeTransaction(tx -> {
+            session.executeWrite(tx -> {
                 tx.run("CREATE DATABASE `" + database + "` IF NOT EXISTS WAIT").consume();
                 return null;
             });
@@ -63,13 +70,18 @@ public class UserService {
 
     public AuthResponse register(String username, String password) {
         String cleanName = normalize(username);
-        String salt = UUID.randomUUID().toString().replace("-", "");
+        if (password == null || password.length() < 10 || password.length() > 128) {
+            throw new IllegalArgumentException("密码长度必须为 10 到 128 个字符");
+        }
+        if (isReservedAdminName(cleanName)) {
+            throw new IllegalArgumentException("该用户名不可注册");
+        }
         String userId = UUID.randomUUID().toString();
         String now = Instant.now().toString();
-        String passwordHash = hashPassword(cleanName, password, salt);
+        String passwordHash = passwordEncoder.encode(password);
 
         try (Session session = session()) {
-            return session.writeTransaction(tx -> {
+            return session.executeWrite(tx -> {
                 Result existingResult = tx.run(
                         "MATCH (u:AgentUser {username: $username}) RETURN u LIMIT 1",
                         Values.parameters("username", cleanName)
@@ -80,14 +92,15 @@ public class UserService {
                 Record row = tx.run(
                         "CREATE (u:AgentUser {" +
                                 "userId: $userId, username: $username, displayName: $displayName, " +
-                                "passwordHash: $passwordHash, salt: $salt, createdAt: $now, updatedAt: $now" +
-                                "}) RETURN u.userId AS userId, u.username AS username, u.displayName AS displayName",
+                                "passwordHash: $passwordHash, passwordAlgorithm: 'bcrypt', role: $role, " +
+                                "createdAt: $now, updatedAt: $now" +
+                                "}) RETURN u.userId AS userId, u.username AS username, u.displayName AS displayName, u.role AS role",
                         Values.parameters(
                                 "userId", userId,
                                 "username", cleanName,
                                 "displayName", cleanName,
                                 "passwordHash", passwordHash,
-                                "salt", salt,
+                                "role", ROLE_USER,
                                 "now", now
                         )
                 ).single();
@@ -99,11 +112,13 @@ public class UserService {
     public AuthResponse login(String username, String password) {
         String cleanName = normalize(username);
         try (Session session = session()) {
-            return session.writeTransaction(tx -> {
+            return session.executeWrite(tx -> {
                 Result result = tx.run(
                         "MATCH (u:AgentUser {username: $username}) " +
                                 "RETURN u.userId AS userId, u.username AS username, u.displayName AS displayName, " +
-                                "u.passwordHash AS passwordHash, u.salt AS salt LIMIT 1",
+                                "u.passwordHash AS passwordHash, u.salt AS salt, " +
+                                "coalesce(u.passwordAlgorithm, 'sha256') AS passwordAlgorithm, " +
+                                "coalesce(u.role, 'USER') AS role LIMIT 1",
                         Values.parameters("username", cleanName)
                 );
                 if (!result.hasNext()) {
@@ -112,14 +127,49 @@ public class UserService {
                 Record row = result.next();
                 String expected = row.get("passwordHash").asString("");
                 String salt = row.get("salt").asString("");
-                if (!expected.equals(hashPassword(cleanName, password, salt))) {
+                String algorithm = row.get("passwordAlgorithm").asString("sha256");
+                boolean valid = "bcrypt".equalsIgnoreCase(algorithm)
+                        ? passwordEncoder.matches(password, expected)
+                        : MessageDigest.isEqual(
+                                expected.getBytes(StandardCharsets.US_ASCII),
+                                legacyHash(cleanName, password, salt).getBytes(StandardCharsets.US_ASCII));
+                if (!valid) {
                     throw new IllegalArgumentException("用户名或密码错误");
                 }
-                tx.run(
-                        "MATCH (u:AgentUser {userId: $userId}) SET u.lastLoginAt = $now, u.updatedAt = $now",
-                        Values.parameters("userId", row.get("userId").asString(), "now", Instant.now().toString())
-                ).consume();
+                String upgradedHash = "bcrypt".equalsIgnoreCase(algorithm) ? expected : passwordEncoder.encode(password);
+                tx.run("MATCH (u:AgentUser {userId: $userId}) " +
+                                "SET u.lastLoginAt = $now, u.updatedAt = $now, " +
+                                "u.passwordHash = $passwordHash, u.passwordAlgorithm = 'bcrypt', u.role = coalesce(u.role, 'USER') " +
+                                "REMOVE u.salt",
+                        Values.parameters("userId", row.get("userId").asString(), "now", Instant.now().toString(),
+                                "passwordHash", upgradedHash)).consume();
                 return toAuthResponse(row);
+            });
+        }
+    }
+
+    public void ensureBootstrapAdmin(String username, String password) {
+        String cleanName = normalize(username);
+        String now = Instant.now().toString();
+        try (Session session = session()) {
+            session.executeWrite(tx -> {
+                Result existing = tx.run(
+                        "MATCH (u:AgentUser {username: $username}) RETURN u.userId AS userId LIMIT 1",
+                        Values.parameters("username", cleanName));
+                if (existing.hasNext()) {
+                    tx.run("MATCH (u:AgentUser {username: $username}) " +
+                                    "SET u.role = 'ADMIN', u.updatedAt = $now, u.passwordHash = $passwordHash, " +
+                                    "u.passwordAlgorithm = 'bcrypt' REMOVE u.salt",
+                            Values.parameters("username", cleanName, "now", now,
+                                    "passwordHash", passwordEncoder.encode(password))).consume();
+                } else {
+                    tx.run("CREATE (u:AgentUser {userId: $userId, username: $username, displayName: $displayName, " +
+                                    "passwordHash: $passwordHash, passwordAlgorithm: 'bcrypt', role: 'ADMIN', " +
+                                    "createdAt: $now, updatedAt: $now})",
+                            Values.parameters("userId", UUID.randomUUID().toString(), "username", cleanName,
+                                    "displayName", cleanName, "passwordHash", passwordEncoder.encode(password), "now", now)).consume();
+                }
+                return null;
             });
         }
     }
@@ -137,7 +187,8 @@ public class UserService {
         AuthResponse response = new AuthResponse(
                 row.get("userId").asString(),
                 row.get("username").asString(),
-                row.get("displayName").asString()
+                row.get("displayName").asString(),
+                row.get("role").asString(ROLE_USER)
         );
         response.setToken(jwtService.issue(response));
         response.setExpiresIn(properties.getSecurity().getJwtTtlSeconds());
@@ -152,7 +203,13 @@ public class UserService {
         return value;
     }
 
-    private String hashPassword(String username, String password, String salt) {
+    private boolean isReservedAdminName(String username) {
+        String configured = properties.getSecurity().getBootstrapAdminUsername();
+        return "admin".equalsIgnoreCase(username)
+                || (StringUtils.hasText(configured) && configured.trim().equalsIgnoreCase(username));
+    }
+
+    private String legacyHash(String username, String password, String salt) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = digest.digest((username + ":" + salt + ":" + password).getBytes(StandardCharsets.UTF_8));

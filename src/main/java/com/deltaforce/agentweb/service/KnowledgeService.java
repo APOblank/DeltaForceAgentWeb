@@ -6,7 +6,9 @@ import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
-import org.neo4j.driver.TransactionWork;
+import org.neo4j.driver.AccessMode;
+import org.neo4j.driver.TransactionConfig;
+import org.neo4j.driver.TransactionContext;
 import org.neo4j.driver.Value;
 import org.neo4j.driver.Values;
 import org.neo4j.driver.types.Node;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.time.Duration;
 
 @Service
 public class KnowledgeService {
@@ -40,7 +43,7 @@ public class KnowledgeService {
         Map<String, Object> result = new HashMap<String, Object>();
         result.put("database", properties.getNeo4j().getDatabase());
         try (Session session = session()) {
-            String value = session.readTransaction(tx -> tx.run("RETURN 'ok' AS status").single().get("status").asString());
+            String value = session.executeRead(tx -> tx.run("RETURN 'ok' AS status").single().get("status").asString(), transactionConfig());
             result.put("ok", "ok".equals(value));
         } catch (Exception ex) {
             result.put("ok", false);
@@ -54,9 +57,7 @@ public class KnowledgeService {
         final int safeLimit = limit <= 0 ? 20 : Math.min(limit, 100);
 
         try (Session session = session()) {
-            return session.readTransaction(new TransactionWork<List<Map<String, Object>>>() {
-                @Override
-                public List<Map<String, Object>> execute(org.neo4j.driver.Transaction tx) {
+            return session.executeRead(tx -> {
                     Result queryResult = tx.run(
                             "MATCH (n) " +
                                     "WITH n, labels(n) AS labels, properties(n) AS props " +
@@ -75,8 +76,7 @@ public class KnowledgeService {
                         }
                     }
                     return rows;
-                }
-            });
+            }, transactionConfig());
         }
     }
 
@@ -84,7 +84,7 @@ public class KnowledgeService {
         final String safeQuery = normalizeReadOnlyQuery(query);
         final int safeLimit = limit <= 0 ? 100 : Math.min(limit, 500);
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 Result result = tx.run(safeQuery, Values.parameters("limit", safeLimit));
                 List<String> keys = result.keys();
                 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
@@ -102,7 +102,7 @@ public class KnowledgeService {
                 response.put("rows", rows);
                 response.put("count", rows.size());
                 return response;
-            });
+            }, transactionConfig());
         }
     }
 
@@ -110,7 +110,7 @@ public class KnowledgeService {
         final String safeKeyword = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         final int safeLimit = limit <= 0 ? 30 : Math.min(limit, 100);
         try (Session session = session()) {
-            return session.readTransaction(tx -> {
+            return session.executeRead(tx -> {
                 List<Map<String, Object>> candidates = findCandidateNodes(tx, safeKeyword, 12);
                 Long centerId = selectedCenterId != null
                         ? selectedCenterId
@@ -158,12 +158,20 @@ public class KnowledgeService {
                 response.put("relationships", relationships);
                 response.put("centerId", centerId);
                 return response;
-            });
+            }, transactionConfig());
         }
     }
 
     private Session session() {
-        return driver.session(SessionConfig.forDatabase(properties.getNeo4j().getDatabase()));
+        return driver.session(SessionConfig.builder()
+                .withDatabase(properties.getNeo4j().getDatabase())
+                .withDefaultAccessMode(AccessMode.READ)
+                .build());
+    }
+
+    private TransactionConfig transactionConfig() {
+        int seconds = Math.max(1, Math.min(15, properties.getSecurity().getKnowledgeQueryTimeoutSeconds()));
+        return TransactionConfig.builder().withTimeout(Duration.ofSeconds(seconds)).build();
     }
 
     private Map<String, Object> toRow(Record record) {
@@ -194,6 +202,7 @@ public class KnowledgeService {
         return value;
     }
 
+    @SuppressWarnings("deprecation") // Preserve numeric graph IDs for the existing public API contract.
     private Object convertValue(Value value) {
         if (value == null || value.isNull()) {
             return null;
@@ -220,7 +229,7 @@ public class KnowledgeService {
         return raw;
     }
 
-    private List<Map<String, Object>> findCandidateNodes(org.neo4j.driver.Transaction tx, String keyword, int limit) {
+    private List<Map<String, Object>> findCandidateNodes(TransactionContext tx, String keyword, int limit) {
         Result result = tx.run(
                 "MATCH (n) RETURN id(n) AS id, labels(n) AS labels, properties(n) AS props LIMIT $scanLimit",
                 Values.parameters("scanLimit", keyword.isEmpty() ? limit : 2000)
@@ -231,10 +240,11 @@ public class KnowledgeService {
             Map<String, Object> row = toRow(record);
             if (keyword.isEmpty() || rowMatches(row, keyword)) {
                 Map<String, Object> candidate = new HashMap<String, Object>();
+                Map<String, Object> properties = record.get("props").asMap();
                 candidate.put("id", record.get("id").asLong());
                 candidate.put("labels", row.get("labels"));
-                candidate.put("properties", row.get("properties"));
-                candidate.put("caption", nodeCaption((Map<String, Object>) row.get("properties"), record.get("id").asLong()));
+                candidate.put("properties", properties);
+                candidate.put("caption", nodeCaption(properties, record.get("id").asLong()));
                 candidates.add(candidate);
                 if (candidates.size() >= limit) {
                     break;
@@ -244,6 +254,7 @@ public class KnowledgeService {
         return candidates;
     }
 
+    @SuppressWarnings("deprecation") // Preserve numeric graph IDs for the existing public API contract.
     private Map<String, Object> nodeToMap(Node node) {
         Map<String, Object> data = new HashMap<String, Object>();
         data.put("id", node.id());
@@ -253,6 +264,7 @@ public class KnowledgeService {
         return data;
     }
 
+    @SuppressWarnings("deprecation") // Preserve numeric graph IDs for the existing public API contract.
     private Map<String, Object> relationshipToMap(Relationship relationship) {
         Map<String, Object> data = new HashMap<String, Object>();
         data.put("id", relationship.id());

@@ -27,11 +27,14 @@ public class ChatProxyService {
     private final AppProperties properties;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final Neo4jDataCenterService statsService;
 
-    public ChatProxyService(AppProperties properties, RestTemplate restTemplate, ObjectMapper objectMapper) {
+    public ChatProxyService(AppProperties properties, RestTemplate restTemplate, ObjectMapper objectMapper,
+                            Neo4jDataCenterService statsService) {
         this.properties = properties;
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+        this.statsService = statsService;
     }
 
     public ChatResponse chat(String message, Boolean debug, Boolean reactEvents, String userId, String sessionId, String messageId, String conversationMode) {
@@ -138,6 +141,24 @@ public class ChatProxyService {
         payload.put("conversation_mode", StringUtils.hasText(conversationMode) ? conversationMode : "auto");
 
         List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
+        if (StringUtils.hasText(userId)) {
+            try {
+                Map<String, Object> stats = statsService.buildAiContext(userId, message);
+                Object summaryObject = stats.get("summary");
+                if (summaryObject instanceof Map && ((Map<?, ?>) summaryObject).get("totalBattles") instanceof Number
+                        && ((Number) ((Map<?, ?>) summaryObject).get("totalBattles")).longValue() > 0) {
+                    Map<String, Object> systemMessage = new HashMap<String, Object>();
+                    systemMessage.put("role", "system");
+                    systemMessage.put("content", "以下是服务端经过当前登录用户权限校验后提供的个人战绩数据。" +
+                            "只能使用这些数据回答该用户的个人战绩问题，不得推断、请求或引用其他用户数据。\n" +
+                            objectMapper.writeValueAsString(stats));
+                    messages.add(systemMessage);
+                }
+            } catch (Exception ignored) {
+                // Personal stats are optional context; chat remains available if the
+                // dedicated database is temporarily offline.
+            }
+        }
         Map<String, Object> userMessage = new HashMap<String, Object>();
         userMessage.put("role", "user");
         userMessage.put("content", message);

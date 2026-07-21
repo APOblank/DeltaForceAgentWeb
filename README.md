@@ -104,6 +104,73 @@ java -jar target\delta-force-agent-web-0.1.0.jar
 | 注册与登录 | `POST /api/auth/register`、`POST /api/auth/login` |
 | 会话管理 | `/api/chat/sessions/**` |
 
+### 个人数据中心
+
+登录后可通过侧栏的“数据中心”查看与当前站内用户绑定的个人战绩。数据保存在独立 Neo4j 数据库 `sjzuserdata`。后端不会接受客户端提交的用户归属字段，所有账号、对局、队友和物品查询都从 JWT 中的 `userId` 对应 `StatsUser` 锚点进入，并再次校验节点的 `ownerUserId`。
+
+从 WeGame 提取可导入 JSON：
+
+```powershell
+cd delta-force-data-center-main\delta-force-data-center-main
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+python -m src.extractor login
+python -m src.extractor fetch --queue both --count 100
+```
+
+随后在数据中心导入生成的 `data/delta-force-web-import.json`。文件不包含 WeGame Cookie，导入时由后端按当前登录用户完成数据绑定。
+
+支持两种导入格式：
+
+- 本站导出的 `delta-force-agent-data-center-v1` JSON；
+- 原 Delta Force Data Center 导出的 `dfdc_backup_*.zip` 备份。
+
+JSON 最小格式：
+
+```json
+{
+  "account": {
+    "playerId": "游戏玩家 ID",
+    "playerName": "玩家名"
+  },
+  "battles": [
+    {
+      "roomId": "对局 ID",
+      "eventTime": "2026-07-21T12:00:00Z",
+      "mapName": "零号大坝",
+      "gameResult": 0,
+      "playerKillCount": 3,
+      "profitLoss": 1200000,
+      "players": [],
+      "items": []
+    }
+  ]
+}
+```
+
+| 功能 | 接口 |
+|---|---|
+| 账号列表/切换 | `GET /api/data-center/accounts`、`POST /api/data-center/accounts/select` |
+| JSON/旧版 ZIP 导入 | `POST /api/data-center/import`、`POST /api/data-center/import/legacy-backup` |
+| 战绩总览/列表/详情 | `GET /api/data-center/summary`、`GET /api/data-center/records`、`GET /api/data-center/records/{battleId}` |
+| 分析/趋势/物品 | `GET /api/data-center/analysis`、`GET /api/data-center/trends`、`GET /api/data-center/items` |
+| 导出/删除 | `GET /api/data-center/export`、`DELETE /api/data-center/accounts/{accountId}` |
+
+个人战绩数据库配置：
+
+```yaml
+delta-force:
+  neo4j:
+    stats-database: sjzuserdata
+    stats-migration-enabled: true
+```
+
+首次启动会幂等地把旧 H2/PostgreSQL 数据按 `owner_user_id` 迁移到 `sjzuserdata`，成功后写入迁移标记。关系库暂时保留，仅用于旧 ZIP 解析和迁移兼容，不再作为数据中心 API 的主存储。
+
+智能对话不会执行模型生成的任意 Cypher。Spring Boot 只会根据当前 JWT 用户查询受控的战绩总览、最近战绩和分析结果，再作为只读上下文传给智能体。模型请求参数不能指定 `userId`。
+
+生产环境可通过 `CORS_ALLOWED_ORIGINS` 配置允许访问 API 的前端来源，多个来源使用英文逗号分隔。
+
 ## 行情节点属性
 
 `sjzdata` 中的枪械、配件和装备节点可提供以下属性：

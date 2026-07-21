@@ -19,6 +19,7 @@ const state = {
   selectedReactEventId: "",
   selectedReactMessageId: "",
   messageReactEvents: {},
+  pendingChats: {},
   conversation: { activeTaskId: "", taskStatus: "" },
   nextConversationMode: "auto",
   chatSending: false,
@@ -31,12 +32,18 @@ const state = {
   gunModImageCatalog: [],
   gunModImageCatalogReady: false,
   gunModImageCatalogPromise: null,
+  dataCenterTab: "overview",
+  dataCenterPage: 1,
+  dataCenterSize: 20,
+  dataCenterSummary: null,
+  dataCenterFilters: { map: "", result: "", start: "", end: "" },
 };
 
 const pageTitles = {
   "/": "三角洲行动智能体",
   "/chat": "智能对话",
   "/market": "市场数据查看",
+  "/data-center": "个人数据中心",
   "/gun-modifier": "改枪台",
   "/knowledge": "知识图谱查询",
   "/readiness": "卡战备",
@@ -49,6 +56,7 @@ const pageTitlesEn = {
   "/": "Delta Force Agent",
   "/chat": "AI Chat",
   "/market": "Market Data",
+  "/data-center": "Player Data Center",
   "/gun-modifier": "Gun Bench",
   "/knowledge": "Knowledge Graph",
   "/readiness": "Readiness Builder",
@@ -238,8 +246,8 @@ function applyTheme() {
 function applyLocale() {
   document.documentElement.lang = state.locale === "en" ? "en" : "zh-CN";
   const labels = state.locale === "en"
-    ? { "/": "Home", "/chat": "AI Chat", "/market": "Market", "/gun-modifier": "Gun Bench", "/knowledge": "Knowledge", "/readiness": "Readiness", "/news": "Daily Intel", "/admin": "Admin" }
-    : { "/": "首页", "/chat": "智能对话", "/market": "市场数据", "/gun-modifier": "改枪台", "/knowledge": "图谱查询", "/readiness": "卡战备", "/news": "今日资讯", "/admin": "管理后台" };
+    ? { "/": "Home", "/chat": "AI Chat", "/market": "Market", "/data-center": "Data Center", "/gun-modifier": "Gun Bench", "/knowledge": "Knowledge", "/readiness": "Readiness", "/news": "Daily Intel", "/admin": "Admin" }
+    : { "/": "首页", "/chat": "智能对话", "/market": "市场数据", "/data-center": "数据中心", "/gun-modifier": "改枪台", "/knowledge": "图谱查询", "/readiness": "卡战备", "/news": "今日资讯", "/admin": "管理后台" };
   document.querySelectorAll(".nav-item").forEach((item) => {
     const text = item.querySelectorAll("span")[1];
     if (text && labels[item.dataset.route]) text.textContent = labels[item.dataset.route];
@@ -377,8 +385,8 @@ function chatPage() {
         <div class="messages" id="messages">${defaultChatMessages()}</div>
         <form class="composer" id="chat-form">
           <button class="tool-button" type="button" title="添加工具">＋</button>
-          <input id="chat-input" placeholder="询问价格、装备、图谱知识或改枪方案..." autocomplete="off" />
-          <button class="primary-button" type="submit">发送</button>
+          <input id="chat-input" placeholder="询问价格、装备、图谱知识或改枪方案..." autocomplete="off" ${state.chatSending ? "disabled" : ""} />
+          <button class="primary-button" type="submit" ${state.chatSending ? "disabled" : ""}>发送</button>
         </form>
       </section>
       <aside class="panel react-panel">
@@ -413,9 +421,9 @@ function renderSessionList() {
     return;
   }
   container.innerHTML = state.sessions.map((session) => `
-    <article class="session-item ${session.sessionId === state.activeSessionId ? "active" : ""}" data-session-id="${session.sessionId}">
+    <article class="session-item ${session.sessionId === state.activeSessionId ? "active" : ""} ${state.pendingChats[session.sessionId]?.status === "running" ? "pending" : ""}" data-session-id="${session.sessionId}">
       <strong>${escapeHtml(session.title || "新的对话")}</strong>
-      <small>${escapeHtml((session.updatedAt || "").replace("T", " ").slice(0, 16))}</small>
+      <small>${state.pendingChats[session.sessionId]?.status === "running" ? "正在思考…" : escapeHtml((session.updatedAt || "").replace("T", " ").slice(0, 16))}</small>
       <button class="session-more-button" type="button" data-session-options="${session.sessionId}" aria-label="对话操作">···</button>
       <div class="session-action-menu" data-session-menu="${session.sessionId}" hidden>
         <button type="button" data-session-action="${session.archived ? "restore" : "archive"}" data-session-action-id="${session.sessionId}">${session.archived ? "恢复" : "归档"}</button>
@@ -504,9 +512,12 @@ function loadSessionMessages(sessionId) {
   if (!state.user || !sessionId) return;
   state.activeSessionId = sessionId;
   localStorage.setItem("delta-force-session", sessionId);
+  state.conversation = { activeTaskId: "", taskStatus: "" };
+  renderConversationStatus();
   renderSessionList();
   api(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`)
     .then((messages) => {
+      if (state.activeSessionId !== sessionId) return;
       const box = document.querySelector("#messages");
       state.messageReactEvents = {};
       state.selectedReactMessageId = "";
@@ -522,14 +533,25 @@ function loadSessionMessages(sessionId) {
         }
         if (message.messageId && message.role !== "user") state.gunModReplies[message.messageId] = { content: message.content || "", events, prompt: lastUserPrompt };
       });
-      box.innerHTML = messages.length ? messages.map(messageMarkup).join("") : defaultChatMessages();
+      const pending = state.pendingChats[sessionId];
+      const savedMessages = messages.length ? messages.map(messageMarkup).join("") : defaultChatMessages();
+      if (pending) {
+        state.reactEvents = pending.events;
+        state.selectedReactEventId = pending.events.length ? pending.events[pending.events.length - 1].event_id : "";
+        state.selectedReactMessageId = pending.assistantId;
+        state.messageReactEvents[pending.assistantId] = pending.events;
+        state.gunModReplies[pending.assistantId] = { content: pending.content, events: pending.events, prompt: pending.prompt };
+      }
+      box.innerHTML = `${savedMessages}${pending ? pendingAssistantMarkup(pending) : ""}`;
       bindMessageReactClicks();
       renderReactTimeline();
       loadSessionTasks();
       box.scrollTop = box.scrollHeight;
     })
     .catch(() => {
-      document.querySelector("#messages").innerHTML = `<div class="empty-state">读取历史消息失败，请确认 Neo4j 已启动。</div>`;
+      if (state.activeSessionId === sessionId) {
+        document.querySelector("#messages").innerHTML = `<div class="empty-state">读取历史消息失败，请确认 Neo4j 已启动。</div>`;
+      }
     });
 }
 
@@ -554,6 +576,86 @@ function assistantStreamMarkup(id) {
       <div class="bubble" id="${id}"><span class="message-react-tag">ReAct</span>${thinkingMarkup([])}</div>
     </div>
   `;
+}
+
+function pendingAssistantMarkup(pending) {
+  const content = pending.error
+    ? escapeHtml(pending.error)
+    : `${gunModReplyContentMarkup(pending.content || "", pending.events)}<span class="message-react-tag">ReAct</span>${pending.status === "running" ? thinkingMarkup([]) : ""}`;
+  return `
+    <div class="message has-react selected-react-message" data-message-id="${escapeHtml(pending.assistantId)}">
+      <div class="avatar">Δ</div>
+      <div class="bubble" id="${escapeHtml(pending.assistantId)}">${content}</div>
+    </div>
+  `;
+}
+
+function pendingIsVisible(pending) {
+  return pending.sessionId
+    ? state.activeSessionId === pending.sessionId
+    : !state.activeSessionId && state.pendingChats[pending.key] === pending;
+}
+
+function refreshPendingChat(pending) {
+  if (!pendingIsVisible(pending)) return;
+  const bubble = document.getElementById(pending.assistantId);
+  if (bubble) {
+    bubble.innerHTML = pending.error
+      ? escapeHtml(pending.error)
+      : `${gunModReplyContentMarkup(pending.content || "", pending.events)}<span class="message-react-tag">ReAct</span>${pending.status === "running" ? thinkingMarkup([]) : ""}`;
+    bindGunModButtons(bubble);
+  }
+  const messages = document.querySelector("#messages");
+  if (messages) messages.scrollTop = messages.scrollHeight;
+}
+
+function attachPendingSession(pending, sessionId) {
+  if (!sessionId || pending.sessionId === String(sessionId)) return;
+  const wasVisible = pendingIsVisible(pending);
+  delete state.pendingChats[pending.key];
+  pending.sessionId = String(sessionId);
+  pending.key = pending.sessionId;
+  state.pendingChats[pending.key] = pending;
+  if (wasVisible) {
+    state.activeSessionId = pending.sessionId;
+    localStorage.setItem("delta-force-session", pending.sessionId);
+    renderSessionList();
+  }
+  loadSessions();
+}
+
+function applyPendingConversationMetadata(pending, value) {
+  let metadata = value;
+  if (typeof metadata === "string") {
+    try { metadata = JSON.parse(metadata); } catch { return; }
+  }
+  if (!metadata || typeof metadata !== "object") return;
+  attachPendingSession(pending, metadata.session_id || metadata.sessionId);
+  const conversation = metadata.conversation && typeof metadata.conversation === "object" ? metadata.conversation : metadata;
+  const activeTaskId = conversation.active_task_id || conversation.activeTaskId;
+  const taskStatus = conversation.task_status || conversation.taskStatus;
+  if (activeTaskId) pending.activeTaskId = String(activeTaskId);
+  if (taskStatus) pending.taskStatus = String(taskStatus);
+  if (pendingIsVisible(pending)) {
+    state.conversation.activeTaskId = pending.activeTaskId || "";
+    state.conversation.taskStatus = pending.taskStatus || "";
+    renderConversationStatus();
+  }
+}
+
+function updatePendingReactTimeline(pending, event) {
+  if (!event || event.type !== "react_event") return;
+  const existingIndex = pending.events.findIndex((item) => item.event_id === event.event_id);
+  if (existingIndex >= 0) pending.events[existingIndex] = event;
+  else pending.events.push(event);
+  if (!pendingIsVisible(pending)) return;
+  state.reactEvents = pending.events;
+  state.selectedReactEventId = event.event_id;
+  state.selectedReactMessageId = pending.assistantId;
+  state.messageReactEvents[pending.assistantId] = pending.events;
+  state.gunModReplies[pending.assistantId] = { content: pending.content, events: pending.events, prompt: pending.prompt };
+  refreshPendingChat(pending);
+  renderReactTimeline();
 }
 
 function isGunModHandoff(events) {
@@ -848,14 +950,14 @@ function exportReactLog() {
   URL.revokeObjectURL(url);
 }
 
-async function streamChat(text, assistantId, messageId, conversationMode) {
+async function streamChat(pending, messageId, conversationMode) {
   const token = state.user?.token;
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({
-      message: text,
-      sessionId: state.activeSessionId || "",
+      message: pending.prompt,
+      sessionId: pending.sessionId || "",
       messageId,
       conversationMode,
       reactEvents: true,
@@ -868,9 +970,6 @@ async function streamChat(text, assistantId, messageId, conversationMode) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
-  let finalText = "";
-  const bubble = document.querySelector(`#${assistantId}`);
-  const messages = document.querySelector("#messages");
 
   while (true) {
     const { value, done } = await reader.read();
@@ -887,21 +986,11 @@ async function streamChat(text, assistantId, messageId, conversationMode) {
 
       const chunk = JSON.parse(raw);
       if (chunk.sessionId) {
-        applyConversationMetadata(chunk);
+        applyPendingConversationMetadata(pending, chunk);
         continue;
       }
       if (chunk.assistantMessageId) {
-        const events = normalizeReactEvents(state.messageReactEvents[assistantId]);
-        state.messageReactEvents[chunk.assistantMessageId] = events;
-        delete state.messageReactEvents[assistantId];
-        state.selectedReactMessageId = chunk.assistantMessageId;
-        state.gunModReplies[chunk.assistantMessageId] = state.gunModReplies[assistantId] || { content: finalText, events };
-        delete state.gunModReplies[assistantId];
-        const message = document.querySelector(`[data-message-id="${assistantId}"]`);
-        if (message) {
-          message.dataset.messageId = chunk.assistantMessageId;
-        }
-        bindMessageReactClicks();
+        pending.savedAssistantMessageId = String(chunk.assistantMessageId);
         continue;
       }
       if (chunk.error) {
@@ -910,26 +999,29 @@ async function streamChat(text, assistantId, messageId, conversationMode) {
 
       const delta = chunk.choices?.[0]?.delta || {};
       if (delta.session) {
-        applyConversationMetadata(delta.session);
+        applyPendingConversationMetadata(pending, delta.session);
       }
       if (delta.react_event) {
-        updateReactTimeline(delta.react_event);
+        updatePendingReactTimeline(pending, delta.react_event);
       }
-      if (delta.content && bubble) {
-        finalText += delta.content;
-        state.gunModReplies[state.selectedReactMessageId || assistantId] = { content: finalText, events: state.reactEvents };
-        bubble.innerHTML = `${gunModReplyContentMarkup(finalText, state.reactEvents)}<span class="message-react-tag">ReAct</span>${thinkingMarkup(state.reactEvents)}${gunModCtaMarkup(state.selectedReactMessageId || assistantId, state.reactEvents)}`;
-        bindGunModButtons(bubble);
-        messages.scrollTop = messages.scrollHeight;
+      if (delta.content) {
+        pending.content += delta.content;
+        if (pendingIsVisible(pending)) {
+          state.gunModReplies[pending.assistantId] = { content: pending.content, events: pending.events, prompt: pending.prompt };
+          refreshPendingChat(pending);
+        }
       }
     }
   }
 
-  if (bubble && !finalText) {
-    bubble.innerHTML = `后端没有返回内容<span class="message-react-tag">ReAct</span>`;
+  if (!pending.content) pending.content = "后端没有返回内容";
+  pending.status = "completed";
+  refreshPendingChat(pending);
+  delete state.pendingChats[pending.key];
+  await loadSessions();
+  if (pending.sessionId && state.activeSessionId === pending.sessionId) {
+    return loadSessionMessages(pending.sessionId);
   }
-  await loadSessionTasks();
-  return loadSessions();
 }
 
 function marketPage() {
@@ -1340,6 +1432,274 @@ function bindAdmin() {
   loadUsers(); loadContent(); loadGithubUrl();
 }
 
+function dataCenterPage() {
+  return `
+    <div class="data-center-layout">
+      <section class="data-center-head" aria-labelledby="data-center-heading">
+        <div>
+          <div class="eyebrow">PERSONAL COMBAT ARCHIVE</div>
+          <h2 id="data-center-heading">个人数据中心</h2>
+          <p>战绩、收益与趋势仅绑定当前登录账号。WeGame Cookie 不会上传到本站。</p>
+        </div>
+        <div class="data-center-actions">
+          <label class="dc-account-field" for="dc-account-select"><span>游戏账号</span><select id="dc-account-select" aria-label="当前游戏账号"><option value="">加载中…</option></select></label>
+          <button id="dc-import-open" class="primary-button" type="button">导入战绩</button>
+          <button id="dc-export" class="ghost-button" type="button">导出备份</button>
+        </div>
+      </section>
+      <nav class="dc-tabs" aria-label="数据中心视图">
+        ${[["overview","总览"],["records","战绩"],["analysis","分析"],["trends","趋势"],["items","物品"]].map(([key,label]) => `<button class="dc-tab${state.dataCenterTab === key ? " active" : ""}" type="button" data-dc-tab="${key}">${label}</button>`).join("")}
+      </nav>
+      <section id="dc-content" class="dc-content" aria-live="polite"><div class="dc-loading"><span class="spinner" aria-hidden="true"></span>正在读取个人战绩…</div></section>
+      <dialog id="dc-import-dialog" class="dc-dialog">
+        <form method="dialog" class="dc-dialog-card" id="dc-import-form">
+          <div class="dc-dialog-head"><div><div class="eyebrow">LOCAL IMPORT</div><h3>导入个人战绩</h3></div><button class="dc-icon-button" value="cancel" type="submit" aria-label="关闭导入窗口">×</button></div>
+          <p class="dc-help">选择数据中心 JSON 文件。服务端会忽略文件中的用户归属，并自动绑定到当前登录用户。</p>
+          <label class="dc-file-drop" for="dc-import-file"><span>选择 JSON 或 ZIP 文件</span><small id="dc-import-file-name">支持本站 JSON，或原数据中心导出的 ZIP 备份</small><input id="dc-import-file" type="file" accept="application/json,.json,application/zip,.zip" /></label>
+          <details class="dc-import-contract"><summary>查看导入格式</summary><pre>{
+  "account": { "playerId": "游戏玩家ID", "playerName": "玩家名" },
+  "battles": [{
+    "roomId": "对局ID", "eventTime": "2026-07-21T12:00:00Z",
+    "mapName": "零号大坝", "gameResult": 0, "playerKillCount": 3,
+    "profitLoss": 1200000, "players": [], "items": []
+  }]
+}</pre></details>
+          <div id="dc-import-status" class="form-status" role="status"></div>
+          <div class="dc-dialog-actions"><button class="ghost-button" value="cancel" type="submit">取消</button><button id="dc-import-submit" class="primary-button" value="default" type="submit">开始导入</button></div>
+        </form>
+      </dialog>
+      <dialog id="dc-detail-dialog" class="dc-dialog dc-detail-dialog"><div class="dc-dialog-card"><div class="dc-dialog-head"><div><div class="eyebrow">BATTLE DETAIL</div><h3>单局详情</h3></div><button id="dc-detail-close" class="dc-icon-button" type="button" aria-label="关闭详情">×</button></div><div id="dc-detail-content" class="dc-detail-content"></div></div></dialog>
+    </div>`;
+}
+
+function dcNumber(value) { return Number(value || 0).toLocaleString("zh-CN"); }
+function dcPercent(value) { return `${Number(value || 0).toFixed(1)}%`; }
+function dcDuration(value) { const seconds = Math.max(0, Number(value || 0)); return `${Math.floor(seconds / 60)}分${Math.round(seconds % 60)}秒`; }
+function dcDate(value) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value).replace("T", " ").slice(0, 19) : date.toLocaleString("zh-CN", { hour12: false }); }
+function dcResult(value) { return Number(value) === 0 ? `<span class="dc-result success">成功撤离</span>` : `<span class="dc-result failed">未撤离</span>`; }
+function dcQuery(extra = {}) {
+  const params = new URLSearchParams();
+  const filters = { ...state.dataCenterFilters, ...extra };
+  Object.entries(filters).forEach(([key, value]) => { if (value !== "" && value !== null && value !== undefined) params.set(key, value); });
+  return params.toString() ? `?${params.toString()}` : "";
+}
+
+function dcLoading(label = "正在读取个人战绩…") {
+  const content = document.querySelector("#dc-content");
+  if (content) content.innerHTML = `<div class="dc-loading"><span class="spinner" aria-hidden="true"></span>${escapeHtml(label)}</div>`;
+}
+
+function dcError(error) {
+  const content = document.querySelector("#dc-content");
+  if (content) content.innerHTML = `<div class="dc-empty"><strong>数据读取失败</strong><p>${escapeHtml(error?.message || "请稍后重试")}</p><button id="dc-retry" class="ghost-button" type="button">重新加载</button></div>`;
+  document.querySelector("#dc-retry")?.addEventListener("click", loadDataCenterTab);
+}
+
+function bindDataCenter() {
+  document.querySelectorAll("[data-dc-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.dataCenterTab = button.dataset.dcTab;
+    state.dataCenterPage = 1;
+    document.querySelectorAll("[data-dc-tab]").forEach((item) => item.classList.toggle("active", item === button));
+    loadDataCenterTab();
+  }));
+  document.querySelector("#dc-account-select")?.addEventListener("change", (event) => {
+    const accountId = event.target.value;
+    if (!accountId) return;
+    event.target.disabled = true;
+    api("/api/data-center/accounts/select", { method: "POST", body: JSON.stringify({ accountId }) })
+      .then(() => loadDataCenterSummary(true)).catch(dcError).finally(() => { event.target.disabled = false; });
+  });
+  const importDialog = document.querySelector("#dc-import-dialog");
+  document.querySelector("#dc-import-open")?.addEventListener("click", () => importDialog.showModal());
+  document.querySelector("#dc-import-file")?.addEventListener("change", (event) => {
+    document.querySelector("#dc-import-file-name").textContent = event.target.files?.[0]?.name || "支持本项目导出的备份或规范化采集器数据";
+  });
+  document.querySelector("#dc-import-form")?.addEventListener("submit", async (event) => {
+    if (event.submitter?.value === "cancel") return;
+    event.preventDefault();
+    const file = document.querySelector("#dc-import-file").files?.[0];
+    const status = document.querySelector("#dc-import-status");
+    const submit = document.querySelector("#dc-import-submit");
+    if (!file) { status.textContent = "请先选择 JSON 文件"; return; }
+    submit.disabled = true; status.textContent = "正在校验并导入…";
+    try {
+      let result;
+      if (file.name.toLowerCase().endsWith(".zip")) {
+        const form = new FormData(); form.append("file", file);
+        const response = await fetch(`${API_BASE}/api/data-center/import/legacy-backup`, { method: "POST", headers: { Authorization: `Bearer ${state.user.token}` }, body: form });
+        const data = await response.json(); if (!response.ok) throw new Error(data.message || data.error || "备份导入失败"); result = data;
+      } else {
+        const payload = JSON.parse(await file.text());
+        result = await api("/api/data-center/import", { method: "POST", body: JSON.stringify(payload) });
+      }
+      status.textContent = `导入完成：新增 ${result.insertedBattles} 局，更新 ${result.updatedBattles} 局。`;
+      setTimeout(() => { importDialog.close(); loadDataCenterSummary(true); }, 700);
+    } catch (error) { status.textContent = error.message || "导入失败，请检查文件格式"; }
+    finally { submit.disabled = false; }
+  });
+  document.querySelector("#dc-export")?.addEventListener("click", exportDataCenter);
+  document.querySelector("#dc-detail-close")?.addEventListener("click", () => document.querySelector("#dc-detail-dialog").close());
+  loadDataCenterSummary(false);
+}
+
+function loadDataCenterSummary(reloadTab) {
+  return api("/api/data-center/summary").then((summary) => {
+    state.dataCenterSummary = summary;
+    const select = document.querySelector("#dc-account-select");
+    const accounts = summary.accounts || [];
+    if (select) {
+      select.innerHTML = accounts.length ? accounts.map((account) => `<option value="${escapeHtml(account.id)}"${account.active ? " selected" : ""}>${escapeHtml(account.playerName)} · Lv.${dcNumber(account.level)}</option>`).join("") : `<option value="">尚未绑定账号</option>`;
+      select.disabled = !accounts.length;
+    }
+    if (reloadTab || document.querySelector("#dc-content")) loadDataCenterTab();
+  }).catch(dcError);
+}
+
+function loadDataCenterTab() {
+  const summary = state.dataCenterSummary;
+  if (!summary) { dcLoading(); return loadDataCenterSummary(false); }
+  if (!summary.activeAccount) {
+    document.querySelector("#dc-content").innerHTML = `<div class="dc-empty dc-empty-onboarding"><span class="dc-empty-mark">Δ</span><strong>还没有个人战绩</strong><p>从本地采集器或数据中心备份导入 JSON。导入内容将自动绑定当前登录用户。</p><button id="dc-empty-import" class="primary-button" type="button">导入第一份战绩</button></div>`;
+    document.querySelector("#dc-empty-import")?.addEventListener("click", () => document.querySelector("#dc-import-dialog").showModal());
+    return;
+  }
+  if (state.dataCenterTab === "overview") return loadDcOverview();
+  if (state.dataCenterTab === "records") return loadDcRecords();
+  if (state.dataCenterTab === "analysis") return loadDcAnalysis();
+  if (state.dataCenterTab === "trends") return loadDcTrends();
+  if (state.dataCenterTab === "items") return loadDcItems();
+}
+
+function dcMetric(label, value, hint, tone = "") {
+  return `<article class="dc-metric ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(hint || "")}</small></article>`;
+}
+
+function dcRecordTable(rows, compact = false) {
+  if (!rows?.length) return `<div class="dc-empty compact"><strong>暂无符合条件的战绩</strong><p>调整筛选条件，或导入新的对局数据。</p></div>`;
+  return `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>时间</th><th>地图 / 干员</th><th>结果</th><th>击杀</th><th>收益</th>${compact ? "" : "<th>时长</th>"}<th><span class="sr-only">操作</span></th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(dcDate(row.eventTime))}</td><td><strong>${escapeHtml(row.mapName || "未知地图")}</strong><small>${escapeHtml(row.roleName || "未知干员")}</small></td><td>${dcResult(row.gameResult)}</td><td class="dc-number">${dcNumber(row.playerKillCount)}</td><td class="dc-number ${Number(row.profitLoss) >= 0 ? "positive" : "negative"}">${Number(row.profitLoss) >= 0 ? "+" : ""}${dcNumber(row.profitLoss)}</td>${compact ? "" : `<td>${escapeHtml(dcDuration(row.durationSeconds))}</td>`}<td><button class="dc-row-action" type="button" data-battle-id="${escapeHtml(row.id)}">详情</button></td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function bindDcRecordRows() {
+  document.querySelectorAll("[data-battle-id]").forEach((button) => button.addEventListener("click", () => openDcBattle(button.dataset.battleId)));
+}
+
+function loadDcOverview() {
+  dcLoading("正在汇总战绩…");
+  Promise.all([api("/api/data-center/summary"), api("/api/data-center/records?page=1&size=6")]).then(([summary, records]) => {
+    state.dataCenterSummary = summary;
+    document.querySelector("#dc-content").innerHTML = `
+      <div class="dc-metric-grid">
+        ${dcMetric("总对局", dcNumber(summary.totalBattles), `${dcNumber(summary.escapedBattles)} 次撤离`)}
+        ${dcMetric("撤离率", dcPercent(summary.escapeRate), "成功撤离 / 总对局", "accent")}
+        ${dcMetric("玩家击杀", dcNumber(summary.playerKills), "累计对局击杀")}
+        ${dcMetric("累计收益", dcNumber(summary.totalProfit), `场均 ${dcNumber(summary.averageProfit)}`, Number(summary.totalProfit) >= 0 ? "positive" : "negative")}
+        ${dcMetric("平均时长", dcDuration(summary.averageDurationSeconds), "单局平均用时")}
+      </div>
+      <section class="dc-panel"><div class="dc-panel-head"><div><h3>最近战绩</h3><p>当前账号最近 6 场对局</p></div><button class="ghost-button" id="dc-view-all" type="button">查看全部</button></div>${dcRecordTable(records.data || [], true)}</section>
+      <section class="dc-account-card"><div><span class="dc-account-avatar">${escapeHtml((summary.activeAccount.playerName || "玩").slice(0,1))}</span><div><strong>${escapeHtml(summary.activeAccount.playerName)}</strong><small>玩家 ID：${escapeHtml(summary.activeAccount.gamePlayerId)} · Lv.${dcNumber(summary.activeAccount.level)}</small></div></div><button id="dc-delete-account" class="dc-danger-button" type="button">删除此账号数据</button></section>`;
+    bindDcRecordRows();
+    document.querySelector("#dc-view-all")?.addEventListener("click", () => { state.dataCenterTab = "records"; document.querySelector('[data-dc-tab="records"]').click(); });
+    document.querySelector("#dc-delete-account")?.addEventListener("click", deleteDcAccount);
+  }).catch(dcError);
+}
+
+function dcFilterBar(extra = "") {
+  const f = state.dataCenterFilters;
+  return `<form id="dc-filter-form" class="dc-filter-bar">
+    <label><span>开始日期</span><input id="dc-filter-start" type="date" value="${escapeHtml(f.start)}" /></label>
+    <label><span>结束日期</span><input id="dc-filter-end" type="date" value="${escapeHtml(f.end)}" /></label>
+    ${extra}
+    <button class="primary-button" type="submit">应用筛选</button><button id="dc-filter-reset" class="ghost-button" type="button">重置</button>
+  </form>`;
+}
+
+function bindDcFilters(loader) {
+  document.querySelector("#dc-filter-form")?.addEventListener("submit", (event) => {
+    event.preventDefault(); state.dataCenterFilters.start = document.querySelector("#dc-filter-start")?.value || ""; state.dataCenterFilters.end = document.querySelector("#dc-filter-end")?.value || "";
+    const map = document.querySelector("#dc-filter-map"), result = document.querySelector("#dc-filter-result");
+    if (map) state.dataCenterFilters.map = map.value; if (result) state.dataCenterFilters.result = result.value;
+    state.dataCenterPage = 1; loader();
+  });
+  document.querySelector("#dc-filter-reset")?.addEventListener("click", () => { state.dataCenterFilters = { map: "", result: "", start: "", end: "" }; state.dataCenterPage = 1; loader(); });
+}
+
+function loadDcRecords() {
+  dcLoading("正在读取战绩列表…");
+  api(`/api/data-center/records${dcQuery({ page: state.dataCenterPage, size: state.dataCenterSize })}`).then((result) => {
+    const totalPages = Math.max(1, Math.ceil(Number(result.total || 0) / state.dataCenterSize));
+    const maps = result.maps || [];
+    document.querySelector("#dc-content").innerHTML = `${dcFilterBar(`<label><span>地图</span><select id="dc-filter-map"><option value="">全部地图</option>${maps.map((name) => `<option${state.dataCenterFilters.map === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label><label><span>结果</span><select id="dc-filter-result"><option value="">全部结果</option><option value="0"${state.dataCenterFilters.result === "0" ? " selected" : ""}>成功撤离</option><option value="1"${state.dataCenterFilters.result === "1" ? " selected" : ""}>未撤离</option></select></label>`)}` +
+      `<section class="dc-panel"><div class="dc-panel-head"><div><h3>战绩列表</h3><p>共 ${dcNumber(result.total)} 场对局</p></div></div>${dcRecordTable(result.data || [])}<div class="dc-pagination"><button id="dc-page-prev" class="ghost-button" type="button"${state.dataCenterPage <= 1 ? " disabled" : ""}>上一页</button><span>第 ${state.dataCenterPage} / ${totalPages} 页</span><button id="dc-page-next" class="ghost-button" type="button"${state.dataCenterPage >= totalPages ? " disabled" : ""}>下一页</button></div></section>`;
+    bindDcFilters(loadDcRecords); bindDcRecordRows();
+    document.querySelector("#dc-page-prev")?.addEventListener("click", () => { state.dataCenterPage--; loadDcRecords(); });
+    document.querySelector("#dc-page-next")?.addEventListener("click", () => { state.dataCenterPage++; loadDcRecords(); });
+  }).catch(dcError);
+}
+
+function dcBars(title, rows, valueKey, formatter = dcNumber) {
+  const max = Math.max(1, ...(rows || []).map((row) => Math.abs(Number(row[valueKey] || 0))));
+  return `<section class="dc-panel dc-analysis-panel"><div class="dc-panel-head"><div><h3>${escapeHtml(title)}</h3><p>按当前筛选范围聚合</p></div></div>${rows?.length ? `<div class="dc-bars">${rows.map((row) => `<div class="dc-bar-row"><div><strong>${escapeHtml(row.label)}</strong><span>${dcNumber(row.battles)} 局 · 撤离率 ${dcPercent(row.escapeRate)}</span></div><div class="dc-bar-track"><span style="width:${Math.max(2, Math.abs(Number(row[valueKey] || 0)) / max * 100)}%"></span></div><b>${escapeHtml(formatter(row[valueKey]))}</b></div>`).join("")}</div>` : `<div class="dc-empty compact"><p>暂无分析数据</p></div>`}</section>`;
+}
+
+function loadDcAnalysis() {
+  dcLoading("正在计算表现分布…");
+  api(`/api/data-center/analysis${dcQuery({ map: null, result: null })}`).then((data) => {
+    document.querySelector("#dc-content").innerHTML = dcFilterBar() + `<div class="dc-analysis-grid">${dcBars("地图表现", data.maps, "profit")}${dcBars("干员表现", data.roles, "playerKills")}${dcBars("撤离结果", data.results, "battles")}</div><section class="dc-panel"><div class="dc-panel-head"><div><h3>高收益对局</h3><p>当前范围收益最高的 5 局</p></div></div>${dcRecordTable(data.highlights || [], true)}</section>`;
+    bindDcFilters(loadDcAnalysis); bindDcRecordRows();
+  }).catch(dcError);
+}
+
+function dcTrendSvg(points) {
+  if (!points?.length) return `<div class="dc-empty compact"><p>暂无趋势数据</p></div>`;
+  const width = 900, height = 260, pad = 34; const values = points.map((p) => Number(p.profit || 0)); const min = Math.min(0, ...values), max = Math.max(1, ...values); const range = Math.max(1, max - min);
+  const coords = points.map((p, i) => ({ x: points.length === 1 ? width / 2 : pad + i * (width - pad * 2) / (points.length - 1), y: pad + (max - Number(p.profit || 0)) * (height - pad * 2) / range, p }));
+  const path = coords.map((c, i) => `${i ? "L" : "M"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+  return `<div class="dc-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="收益趋势折线图"><line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" class="dc-chart-axis"></line><path d="${path}" class="dc-chart-line"></path>${coords.map((c) => `<circle cx="${c.x}" cy="${c.y}" r="5" tabindex="0"><title>${escapeHtml(c.p.label)}：${dcNumber(c.p.profit)}</title></circle>`).join("")}</svg></div>`;
+}
+
+function loadDcTrends() {
+  dcLoading("正在生成趋势…");
+  const bucket = state.dataCenterFilters.bucket || "day";
+  api(`/api/data-center/trends${dcQuery({ map: null, result: null, bucket })}`).then((data) => {
+    document.querySelector("#dc-content").innerHTML = dcFilterBar(`<label><span>粒度</span><select id="dc-trend-bucket"><option value="day"${bucket === "day" ? " selected" : ""}>按日</option><option value="week"${bucket === "week" ? " selected" : ""}>按周</option><option value="month"${bucket === "month" ? " selected" : ""}>按月</option></select></label>`) + `<section class="dc-panel"><div class="dc-panel-head"><div><h3>收益趋势</h3><p>折线节点可通过键盘聚焦查看精确数值</p></div></div>${dcTrendSvg(data.data || [])}<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>周期</th><th>对局</th><th>撤离率</th><th>击杀</th><th>收益</th></tr></thead><tbody>${(data.data || []).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${dcNumber(row.battles)}</td><td>${dcPercent(row.escapeRate)}</td><td>${dcNumber(row.playerKills)}</td><td class="dc-number ${Number(row.profit) >= 0 ? "positive" : "negative"}">${dcNumber(row.profit)}</td></tr>`).join("")}</tbody></table></div></section>`;
+    bindDcFilters(() => { state.dataCenterFilters.bucket = document.querySelector("#dc-trend-bucket")?.value || "day"; loadDcTrends(); });
+  }).catch(dcError);
+}
+
+function loadDcItems() {
+  dcLoading("正在汇总带出物品…");
+  api(`/api/data-center/items${dcQuery({ map: null, result: null })}`).then((data) => {
+    document.querySelector("#dc-content").innerHTML = dcFilterBar() + `<section class="dc-panel"><div class="dc-panel-head"><div><h3>带出物品</h3><p>累计估值 ${dcNumber(data.totalValue)}</p></div></div>${data.data?.length ? `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>物品</th><th>品质</th><th>数量</th><th>最高单价</th><th>累计价值</th></tr></thead><tbody>${data.data.map((item) => `<tr><td><strong>${escapeHtml(item.itemName || item.itemId || "未知物品")}</strong></td><td><span class="dc-grade grade-${Number(item.grade || 0)}">${dcNumber(item.grade)} 级</span></td><td>${dcNumber(item.quantity)}</td><td class="dc-number">${dcNumber(item.maxUnitPrice)}</td><td class="dc-number positive">${dcNumber(item.totalValue)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="dc-empty compact"><strong>暂无物品数据</strong><p>导入包含 items 的战绩后会显示汇总。</p></div>`}</section>`;
+    bindDcFilters(loadDcItems);
+  }).catch(dcError);
+}
+
+function openDcBattle(battleId) {
+  const dialog = document.querySelector("#dc-detail-dialog"), content = document.querySelector("#dc-detail-content");
+  content.innerHTML = `<div class="dc-loading"><span class="spinner"></span>正在读取详情…</div>`; dialog.showModal();
+  api(`/api/data-center/records/${encodeURIComponent(battleId)}`).then((data) => {
+    const b = data.battle;
+    content.innerHTML = `<div class="dc-detail-hero"><div><span>${escapeHtml(dcDate(b.eventTime))}</span><h4>${escapeHtml(b.mapName || "未知地图")}</h4><p>${escapeHtml(b.roleName || "未知干员")} · ${escapeHtml(dcDuration(b.durationSeconds))}</p></div>${dcResult(b.gameResult)}</div>
+      <div class="dc-detail-metrics">${dcMetric("玩家击杀", dcNumber(b.playerKillCount), `${dcNumber(b.assistCount)} 次助攻`)}${dcMetric("带出价值", dcNumber(b.gainedValue), "本局获得物资")}${dcMetric("净收益", `${Number(b.profitLoss)>=0?"+":""}${dcNumber(b.profitLoss)}`, `战备 ${dcNumber(b.equipmentValue)}`, Number(b.profitLoss)>=0?"positive":"negative")}</div>
+      <section><h4>队伍表现</h4>${data.players?.length ? `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>玩家</th><th>干员</th><th>击杀</th><th>助攻</th><th>收益</th></tr></thead><tbody>${data.players.map((p) => `<tr><td><strong>${escapeHtml(p.playerName || p.gamePlayerId || "未知玩家")}</strong>${p.self ? `<small>本人</small>` : ""}</td><td>${escapeHtml(p.roleName || "—")}</td><td>${dcNumber(p.playerKillCount)}</td><td>${dcNumber(p.assistCount)}</td><td class="dc-number">${dcNumber(p.profitLoss)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="dc-help">该对局没有队伍明细。</p>`}</section>
+      <section><h4>带出物品</h4>${data.items?.length ? `<div class="dc-item-grid">${data.items.map((item) => `<article><div><strong>${escapeHtml(item.itemName || "未知物品")}</strong><span>${dcNumber(item.quantity)} 件 · ${dcNumber(item.unitPrice)} / 件</span></div><b>${dcNumber(item.totalValue)}</b></article>`).join("")}</div>` : `<p class="dc-help">该对局没有物品明细。</p>`}</section>`;
+  }).catch((error) => { content.innerHTML = `<div class="dc-empty"><strong>详情读取失败</strong><p>${escapeHtml(error.message)}</p></div>`; });
+}
+
+function exportDataCenter() {
+  const button = document.querySelector("#dc-export"); button.disabled = true;
+  api("/api/data-center/export").then((data) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = `delta-force-records-${new Date().toISOString().slice(0,10)}.json`; anchor.click(); URL.revokeObjectURL(url);
+  }).catch(dcError).finally(() => { button.disabled = false; });
+}
+
+function deleteDcAccount() {
+  const account = state.dataCenterSummary?.activeAccount;
+  if (!account || !confirm(`确定删除「${account.playerName}」的全部战绩吗？此操作不可撤销。`)) return;
+  api(`/api/data-center/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" }).then(() => { state.dataCenterSummary = null; loadDataCenterSummary(true); }).catch(dcError);
+}
+
 function blankPage() {
   return `<div class="blank-view" aria-hidden="true"></div>`;
 }
@@ -1391,6 +1751,7 @@ function render() {
     "/": homePage,
     "/chat": chatPage,
     "/market": marketPage,
+    "/data-center": dataCenterPage,
     "/gun-modifier": modifierPage,
     "/knowledge": knowledgePage,
     "/readiness": readinessPage,
@@ -1407,6 +1768,7 @@ function render() {
 function bindPageEvents(route) {
   if (route === "/chat") bindChat();
   if (route === "/market") bindMarket();
+  if (route === "/data-center") bindDataCenter();
   if (route === "/readiness") bindReadiness();
   if (route === "/gun-modifier") bindModifier();
   if (route === "/knowledge") bindKnowledge();
@@ -1460,6 +1822,20 @@ function bindChat() {
     state.selectedReactMessageId = assistantId;
     state.messageReactEvents[assistantId] = state.reactEvents;
     state.gunModReplies[assistantId] = { content: "", events: state.reactEvents, prompt: text };
+    const initialSessionId = state.activeSessionId;
+    const pending = {
+      key: initialSessionId || `pending:${assistantId}`,
+      sessionId: initialSessionId,
+      assistantId,
+      prompt: text,
+      content: "",
+      events: state.reactEvents,
+      status: "running",
+      error: "",
+      activeTaskId: "",
+      taskStatus: "",
+    };
+    state.pendingChats[pending.key] = pending;
     renderReactTimeline();
     messages.insertAdjacentHTML("beforeend", messageMarkup({ role: "user", content: text }));
     messages.insertAdjacentHTML("beforeend", assistantStreamMarkup(assistantId));
@@ -1467,18 +1843,20 @@ function bindChat() {
     input.value = "";
     messages.scrollTop = messages.scrollHeight;
     try {
-      await streamChat(text, assistantId, messageId, conversationMode);
+      await streamChat(pending, messageId, conversationMode);
     } catch (error) {
-      const bubble = document.querySelector(`#${assistantId}`);
-      if (bubble) {
-        bubble.textContent = error.message || "后端暂未连接或 FastAPI/Neo4j 不可用，当前无法获得真实回复。";
-      }
-      messages.scrollTop = messages.scrollHeight;
+      pending.status = "failed";
+      pending.error = error.message || "后端暂未连接或 FastAPI/Neo4j 不可用，当前无法获得真实回复。";
+      refreshPendingChat(pending);
     } finally {
       state.chatSending = false;
-      input.disabled = false;
-      if (submit) submit.disabled = false;
-      input.focus();
+      const currentInput = document.querySelector("#chat-input");
+      const currentSubmit = document.querySelector('#chat-form button[type="submit"]');
+      if (currentInput) {
+        currentInput.disabled = false;
+        currentInput.focus();
+      }
+      if (currentSubmit) currentSubmit.disabled = false;
     }
   });
 }

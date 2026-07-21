@@ -41,12 +41,17 @@ public class BackendConfig {
     }
 
     @Bean
-    public WebMvcConfigurer corsConfigurer() {
+    public WebMvcConfigurer corsConfigurer(AppProperties properties) {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
+                String configured = properties.getSecurity().getCorsAllowedOrigins();
+                String[] origins = configured == null ? new String[0] : java.util.Arrays.stream(configured.split(","))
+                        .map(String::trim).filter(value -> !value.isEmpty()).toArray(String[]::new);
                 registry.addMapping("/api/**")
-                        .allowedOrigins("*")
+                        .allowedOrigins(origins.length == 0
+                                ? new String[]{"http://127.0.0.1:8080", "http://localhost:8080"}
+                                : origins)
                         .allowedMethods("GET", "POST", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
             }

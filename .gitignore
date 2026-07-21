@@ -2,6 +2,7 @@
 target/
 .m2/
 .restore-check/
+/data/
 
 # IDE and operating-system files
 .idea/

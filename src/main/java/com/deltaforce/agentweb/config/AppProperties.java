@@ -56,11 +56,14 @@ public class AppProperties {
     public static class Security {
         private String jwtSecret;
         private long jwtTtlSeconds = 86400;
+        private String corsAllowedOrigins = "http://127.0.0.1:8080,http://localhost:8080";
 
         public String getJwtSecret() { return jwtSecret; }
         public void setJwtSecret(String jwtSecret) { this.jwtSecret = jwtSecret; }
         public long getJwtTtlSeconds() { return jwtTtlSeconds; }
         public void setJwtTtlSeconds(long jwtTtlSeconds) { this.jwtTtlSeconds = jwtTtlSeconds; }
+        public String getCorsAllowedOrigins() { return corsAllowedOrigins; }
+        public void setCorsAllowedOrigins(String corsAllowedOrigins) { this.corsAllowedOrigins = corsAllowedOrigins; }
     }
 
     public static class Fastapi {
@@ -111,6 +114,8 @@ public class AppProperties {
         private String password;
         private String database;
         private String userDatabase;
+        private String statsDatabase = "sjzuserdata";
+        private boolean statsMigrationEnabled = true;
 
         public String getUri() {
             return uri;
@@ -151,6 +156,11 @@ public class AppProperties {
         public void setUserDatabase(String userDatabase) {
             this.userDatabase = userDatabase;
         }
+
+        public String getStatsDatabase() { return statsDatabase; }
+        public void setStatsDatabase(String statsDatabase) { this.statsDatabase = statsDatabase; }
+        public boolean isStatsMigrationEnabled() { return statsMigrationEnabled; }
+        public void setStatsMigrationEnabled(boolean statsMigrationEnabled) { this.statsMigrationEnabled = statsMigrationEnabled; }
     }
 
     public static class Data {

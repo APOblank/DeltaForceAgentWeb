@@ -8,7 +8,7 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="primary-sidebar">
         <a class="brand" href="#/">
           <span class="brand-mark">Δ</span>
           <span>
@@ -16,6 +16,20 @@
             <small>Delta Force Agent</small>
           </span>
         </a>
+
+        <button
+          class="sidebar-collapse-button"
+          id="sidebar-collapse-button"
+          type="button"
+          aria-controls="primary-sidebar"
+          aria-expanded="true"
+          aria-label="&#25910;&#36215;&#20391;&#36793;&#26639;"
+          title="&#25910;&#36215;&#20391;&#36793;&#26639;"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m14 6-6 6 6 6"></path>
+          </svg>
+        </button>
 
         <nav class="nav-list" aria-label="主导航">
           <a class="nav-item" href="#/" data-route="/">
@@ -52,7 +66,7 @@
             <span class="icon">◫</span>
             <span>今日资讯</span>
           </a>
-          <a class="nav-item" href="#/admin" data-route="/admin" hidden>
+          <a class="nav-item" href="/admin.html" data-admin-link hidden>
             <span class="icon">▦</span>
             <span>管理后台</span>
           </a>

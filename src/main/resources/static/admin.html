@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>后台管理 · 三角洲行动智能体</title>
+    <link rel="stylesheet" href="./admin.css" />
+  </head>
+  <body>
+    <div class="admin-app">
+      <aside class="admin-sidebar" aria-label="后台导航">
+        <a class="admin-brand" href="/">
+          <span class="admin-brand-mark">Δ</span>
+          <span><strong>后台管理</strong><small>DELTA FORCE OPS</small></span>
+        </a>
+        <nav class="admin-nav" aria-label="管理功能">
+          <button class="admin-nav-item active" type="button" data-panel="overview" aria-current="page">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+            <span>控制台</span>
+          </button>
+          <button class="admin-nav-item" type="button" data-panel="content">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg>
+            <span>内容管理</span>
+          </button>
+          <button class="admin-nav-item" type="button" data-panel="users">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"></circle><path d="M2 21c0-4 3-7 7-7s7 3 7 7M16 4c3 0 5 2 5 5s-2 5-5 5M18 15c2 1 4 3 4 6"></path></svg>
+            <span>用户管理</span>
+          </button>
+          <button class="admin-nav-item" type="button" data-panel="database">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v7c0 2 4 3 8 3s8-1 8-3V5M4 12v7c0 2 4 3 8 3s8-1 8-3v-7"></path></svg>
+            <span>数据库管理</span>
+          </button>
+          <button class="admin-nav-item" type="button" data-panel="market">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3M2 19h22"></path></svg>
+            <span>市场数据</span>
+          </button>
+        </nav>
+        <div class="admin-sidebar-foot">
+          <a class="secondary-button full" href="/">返回前台</a>
+          <button id="admin-logout" class="text-button" type="button">退出管理员账号</button>
+        </div>
+      </aside>
+
+      <main class="admin-main">
+        <header class="admin-topbar">
+          <button id="admin-menu" class="icon-button mobile-only" type="button" aria-label="打开后台导航" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+          </button>
+          <div><span class="eyebrow">ADMINISTRATION</span><h1 id="admin-title">控制台</h1></div>
+          <div class="topbar-status"><span class="status-dot"></span><span id="admin-identity">管理员</span></div>
+        </header>
+
+        <div id="admin-alert" class="admin-alert" role="status" aria-live="polite" hidden></div>
+        <div id="admin-guard" class="guard-card" hidden>
+          <span class="guard-icon">!</span><h2>需要管理员权限</h2>
+          <p>请先使用用户名为 <code>admin</code> 的账户登录，再进入后台管理页面。</p>
+          <a class="primary-button" href="/#/login">前往登录</a>
+        </div>
+
+        <div id="admin-workspace" class="admin-workspace" hidden>
+          <section class="admin-panel active" data-panel-view="overview" aria-labelledby="overview-heading">
+            <div class="page-heading"><div><span class="eyebrow">OPERATIONS OVERVIEW</span><h2 id="overview-heading">系统控制台</h2><p>集中查看用户、会话与 Neo4j 数据源状态。</p></div><button id="overview-refresh" class="secondary-button" type="button">刷新概览</button></div>
+            <div class="metric-grid">
+              <article class="metric-card"><span>注册用户</span><strong id="metric-users">—</strong><small>AgentUser</small></article>
+              <article class="metric-card"><span>聊天会话</span><strong id="metric-sessions">—</strong><small>全部用户</small></article>
+              <article class="metric-card"><span>可管理数据库</span><strong id="metric-databases">—</strong><small>配置白名单</small></article>
+              <article class="metric-card"><span>内容更新时间</span><strong id="metric-updated">—</strong><small>今日资讯</small></article>
+            </div>
+            <div class="overview-grid">
+              <article class="card"><div class="card-heading"><div><span class="badge">QUICK START</span><h3>常用管理入口</h3></div></div><div class="quick-actions"><button type="button" data-jump="users"><strong>查看用户会话</strong><span>按用户审阅聊天记录</span></button><button type="button" data-jump="database"><strong>查询 Neo4j</strong><span>运行只读或写入 Cypher</span></button><button type="button" data-jump="content"><strong>更新今日内容</strong><span>密码、推荐与资讯</span></button></div></article>
+              <article class="card safety-card"><span class="badge amber">SAFETY</span><h3>数据库操作保护</h3><ul><li>仅允许访问应用配置的三个数据库</li><li>写入模式需要二次确认</li><li>禁止数据库、用户和角色等系统级命令</li><li>查询结果最多返回 500 行</li></ul></article>
+            </div>
+          </section>
+
+          <section class="admin-panel" data-panel-view="content" aria-labelledby="content-heading">
+            <div class="page-heading"><div><span class="eyebrow">CONTENT OPERATIONS</span><h2 id="content-heading">内容管理</h2><p>原后台中的 GitHub 链接、每日地图密码、AI 推荐与资讯编辑均已迁移至此。</p></div></div>
+            <form id="content-form" class="card form-stack">
+              <div class="card-heading"><div><span class="badge">PUBLISH</span><h3>站点与今日内容</h3></div><span id="content-status" class="inline-status"></span></div>
+              <label class="field"><span>GitHub 仓库链接</span><input id="github-url" type="url" placeholder="https://github.com/owner/repository" /></label>
+              <fieldset><legend>今日地图密码</legend><div class="field-grid three"><label class="field"><span>AZ3</span><input id="password-az3" /></label><label class="field"><span>零号大坝</span><input id="password-zero-dam" /></label><label class="field"><span>航天基地</span><input id="password-space-city" /></label><label class="field"><span>潮汐监狱</span><input id="password-tide-prison" /></label><label class="field"><span>巴克什</span><input id="password-brakkesh" /></label><label class="field"><span>长弓溪谷</span><input id="password-longbow" /></label></div></fieldset>
+              <label class="field"><span>今日 AI 改枪推荐</span><textarea id="ai-recommendation" rows="6"></textarea><small>清空并保存可移除当前推荐。</small></label>
+              <label class="field"><span>AI 提示词</span><textarea id="ai-prompt" rows="5"></textarea></label>
+              <label class="field"><span>三角洲今日资讯</span><textarea id="news-content" rows="5"></textarea></label>
+              <div class="form-actions"><button class="primary-button" type="submit">保存并发布</button><button id="content-reload" class="secondary-button" type="button">重新载入</button></div>
+            </form>
+          </section>
+
+          <section class="admin-panel" data-panel-view="users" aria-labelledby="users-heading">
+            <div class="page-heading"><div><span class="eyebrow">USER INTELLIGENCE</span><h2 id="users-heading">用户管理</h2><p>选择用户后，可查看该用户的全部会话与消息内容。</p></div><button id="users-refresh" class="secondary-button" type="button">刷新用户</button></div>
+            <div class="user-workbench">
+              <article class="card user-list-card">
+                <label class="search-field" for="user-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input id="user-search" type="search" placeholder="搜索用户名或显示名" /></label>
+                <div class="table-scroll"><table class="admin-table"><thead><tr><th>用户</th><th>会话</th><th>最近登录</th></tr></thead><tbody id="users-body"><tr><td colspan="3">正在读取用户…</td></tr></tbody></table></div>
+              </article>
+              <article class="card session-card"><div class="card-heading"><div><span class="badge blue">SESSIONS</span><h3 id="selected-user-name">请选择用户</h3></div></div><div id="session-list" class="session-list"><p class="empty-state">选择左侧用户以查看会话。</p></div></article>
+              <article class="card message-card"><div class="card-heading"><div><span class="badge amber">MESSAGES</span><h3 id="selected-session-title">会话内容</h3></div></div><div id="message-list" class="message-list"><p class="empty-state">选择会话以查看消息。</p></div></article>
+            </div>
+          </section>
+
+          <section class="admin-panel" data-panel-view="database" aria-labelledby="database-heading">
+            <div class="page-heading"><div><span class="eyebrow">NEO4J WORKBENCH</span><h2 id="database-heading">数据库管理</h2><p>查询应用数据库，或在明确开启写入模式后修改节点与关系。</p></div></div>
+            <div class="database-grid">
+              <form id="cypher-form" class="card form-stack query-card">
+                <div class="card-heading"><div><span class="badge">CYPHER</span><h3>查询编辑器</h3></div><label class="mode-switch"><input id="write-mode" type="checkbox" /><span>写入模式</span></label></div>
+                <div class="field-grid query-options"><label class="field"><span>数据库</span><select id="database-select"></select></label><label class="field"><span>返回行数</span><input id="query-limit" type="number" min="1" max="500" value="100" /></label></div>
+                <label class="field"><span>Cypher 语句</span><textarea id="cypher-query" class="code-input" rows="9" spellcheck="false">MATCH (n) RETURN n LIMIT 25</textarea></label>
+                <label class="field"><span>参数（JSON）</span><textarea id="cypher-parameters" class="code-input" rows="4" spellcheck="false">{}</textarea></label>
+                <div class="example-row"><button type="button" data-query-example="labels">节点标签</button><button type="button" data-query-example="nodes">最近节点</button><button type="button" data-query-example="users">用户节点</button></div>
+                <button id="query-submit" class="primary-button" type="submit">执行只读查询</button>
+              </form>
+              <form id="node-editor-form" class="card form-stack node-editor-card">
+                <div class="card-heading"><div><span class="badge amber">NODE EDITOR</span><h3>节点属性修改</h3></div></div>
+                <p class="card-copy">从查询结果中找到节点 <code>id</code>，输入需要覆盖或新增的属性。</p>
+                <label class="field"><span>节点 ID</span><input id="node-id" type="number" min="0" required placeholder="例如：128" /></label>
+                <label class="field"><span>属性（JSON）</span><textarea id="node-properties" class="code-input" rows="8" required spellcheck="false">{
+  "name": "修改后的名称"
+}</textarea></label>
+                <button class="danger-button" type="submit">更新节点属性</button>
+              </form>
+            </div>
+            <article class="card result-card"><div class="card-heading"><div><span class="badge blue">RESULT</span><h3>执行结果</h3></div><span id="query-summary" class="inline-status">尚未执行</span></div><div id="query-result" class="result-empty">结果将在这里显示。</div></article>
+          </section>
+
+          <section class="admin-panel" data-panel-view="market" aria-labelledby="market-heading">
+            <div class="page-heading"><div><span class="eyebrow">REALTIME DATA</span><h2 id="market-heading">市场数据刷新</h2><p>保留原后台的实时数据刷新功能，请确认 8010 数据服务已经启动。</p></div></div>
+            <form id="market-form" class="card form-stack compact-form">
+              <div class="card-heading"><div><span class="badge amber">SERVICE 8010</span><h3>刷新市场数据</h3></div></div>
+              <div class="field-grid"><label class="field"><span>分类</span><select id="refresh-kind"><option value="">全部分类</option><option value="firearms">枪械</option><option value="attachments">配件</option><option value="armor">护甲</option><option value="helmets">头盔</option><option value="chest_rigs">胸挂</option><option value="backpacks">背包</option></select></label><label class="field"><span>测试页数（可选）</span><input id="refresh-pages" type="number" min="1" placeholder="留空即正式刷新" /></label></div>
+              <label class="check-field"><input id="refresh-save-partial" type="checkbox" /><span>测试抓取也覆盖正式数据</span></label>
+              <button id="market-submit" class="primary-button" type="submit">开始刷新</button>
+              <pre id="market-result" class="console-output">尚未执行刷新</pre>
+            </form>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
+    <script src="./admin.js"></script>
+  </body>
+</html>

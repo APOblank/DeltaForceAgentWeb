@@ -1,7 +1,9 @@
 const view = document.querySelector("#app-view");
 const title = document.querySelector("#page-title");
+const appShell = document.querySelector(".app-shell");
 const sidebar = document.querySelector(".sidebar");
 const menuButton = document.querySelector(".menu-button");
+const sidebarCollapseButton = document.querySelector("#sidebar-collapse-button");
 const topActions = document.querySelector("#top-actions");
 const API_BASE = "";
 
@@ -188,7 +190,8 @@ function setUser(user) {
 
 function renderTopActions() {
   renderSidebarUser();
-  const adminNav = document.querySelector('[data-route="/admin"]');
+  syncSidebarLabels();
+  const adminNav = document.querySelector('[data-admin-link]');
   if (adminNav) adminNav.hidden = state.user?.username !== "admin";
   if (!state.user) {
     topActions.innerHTML = topToolsMarkup();
@@ -254,6 +257,38 @@ function applyLocale() {
   });
   const brand = document.querySelector(".brand strong");
   if (brand) brand.textContent = state.locale === "en" ? "Delta Force Agent" : "三角洲行动智能体";
+  syncSidebarLabels();
+  applySidebarState();
+}
+
+function syncSidebarLabels() {
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    const label = item.querySelectorAll("span")[1]?.textContent.trim();
+    if (label) updateSidebarTooltip(item, label);
+  });
+  const loginButton = document.querySelector(".sidebar-login-button");
+  if (loginButton) updateSidebarTooltip(loginButton, state.locale === "en" ? "Sign in" : "\u767b\u5f55");
+}
+
+function updateSidebarTooltip(control, label) {
+  let tooltip = control.querySelector(".sidebar-tooltip");
+  if (!tooltip) {
+    tooltip = document.createElement("span");
+    tooltip.className = "sidebar-tooltip";
+    tooltip.setAttribute("aria-hidden", "true");
+    control.append(tooltip);
+  }
+  tooltip.textContent = label;
+}
+
+function applySidebarState(collapsed = localStorage.getItem("delta-force-sidebar-collapsed") === "true") {
+  appShell.classList.toggle("sidebar-collapsed", collapsed);
+  const label = collapsed
+    ? (state.locale === "en" ? "Expand sidebar" : "\u5c55\u5f00\u4fa7\u8fb9\u680f")
+    : (state.locale === "en" ? "Collapse sidebar" : "\u6536\u8d77\u4fa7\u8fb9\u680f");
+  sidebarCollapseButton.setAttribute("aria-expanded", String(!collapsed));
+  sidebarCollapseButton.setAttribute("aria-label", label);
+  sidebarCollapseButton.title = label;
 }
 
 function safeExternalUrl(value) {
@@ -1740,6 +1775,10 @@ function loginPage() {
 function render() {
   const route = location.hash.replace("#", "") || "/";
   const normalized = pageTitles[route] ? route : "/";
+  if (normalized === "/admin") {
+    location.replace("/admin.html");
+    return;
+  }
   if (!state.user && !publicRoutes.has(normalized)) {
     sessionStorage.setItem("auth-notice", `请先登录后再使用「${pageTitles[normalized]}」。`);
     location.hash = "#/login";
@@ -1981,8 +2020,42 @@ function bindAuth() {
   });
 }
 
+function playButtonRipple(button, clientX, clientY) {
+  if (!button || button.disabled || button.getAttribute("aria-disabled") === "true") return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const bounds = button.getBoundingClientRect();
+  const x = Number.isFinite(clientX) ? clientX - bounds.left : bounds.width / 2;
+  const y = Number.isFinite(clientY) ? clientY - bounds.top : bounds.height / 2;
+  button.style.setProperty("--button-ripple-x", `${x}px`);
+  button.style.setProperty("--button-ripple-y", `${y}px`);
+  button.classList.remove("is-rippling");
+  void button.offsetWidth;
+  button.classList.add("is-rippling");
+}
+
+function bindButtonMotion() {
+  document.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("button");
+    if (button) playButtonRipple(button, event.clientX, event.clientY);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const button = event.target.closest("button");
+    if (button && !event.repeat) playButtonRipple(button);
+  });
+  document.addEventListener("animationend", (event) => {
+    if (event.animationName === "button-ripple") event.target.classList.remove("is-rippling");
+  });
+}
+
 menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
+sidebarCollapseButton.addEventListener("click", () => {
+  const collapsed = !appShell.classList.contains("sidebar-collapsed");
+  localStorage.setItem("delta-force-sidebar-collapsed", String(collapsed));
+  applySidebarState(collapsed);
+});
 window.addEventListener("hashchange", render);
+bindButtonMotion();
 applyTheme();
 applyLocale();
 render();

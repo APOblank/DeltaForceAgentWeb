@@ -13,6 +13,11 @@
   --red: #d92d20;
   --blue: #2563eb;
   --shadow: 0 12px 34px rgba(0, 0, 0, 0.06);
+  --button-ring: rgba(37, 99, 235, 0.34);
+  --button-ripple: rgba(37, 99, 235, 0.2);
+  --button-highlight: rgba(255, 255, 255, 0.34);
+  --button-shadow: 0 8px 20px rgba(17, 24, 39, 0.1);
+  --button-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root[data-theme="dark"] {
@@ -30,6 +35,10 @@
   --red: #ff8075;
   --blue: #76a7ff;
   --shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+  --button-ring: rgba(118, 167, 255, 0.42);
+  --button-ripple: rgba(118, 167, 255, 0.24);
+  --button-highlight: rgba(255, 255, 255, 0.18);
+  --button-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -62,10 +71,12 @@ textarea {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 240ms var(--button-ease);
 }
 
 .sidebar {
   position: sticky;
+  z-index: 20;
   top: 0;
   height: 100vh;
   padding: 20px 16px;
@@ -74,6 +85,173 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.sidebar-collapse-button {
+  position: absolute;
+  z-index: 11;
+  top: 28px;
+  right: -17px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-collapse-button:hover,
+.sidebar-collapse-button:focus-visible {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+}
+
+.sidebar-collapse-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 240ms var(--button-ease);
+}
+
+.brand,
+.brand > span:last-child,
+.nav-item,
+.nav-item > span:nth-child(2),
+.sidebar-user-card,
+.sidebar-user-name,
+.sidebar-login-button,
+.sidebar-login-button > span:not(.sidebar-user-avatar):not(.sidebar-tooltip) {
+  transition:
+    gap 220ms var(--button-ease),
+    padding 220ms var(--button-ease),
+    opacity 160ms ease,
+    max-width 220ms var(--button-ease),
+    transform 220ms var(--button-ease);
+}
+
+.brand > span:last-child,
+.nav-item > span:nth-child(2),
+.sidebar-user-name,
+.sidebar-login-button > span:not(.sidebar-user-avatar):not(.sidebar-tooltip) {
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+.nav-item,
+.sidebar-login-button {
+  position: relative;
+}
+
+.sidebar-tooltip {
+  position: absolute;
+  z-index: 30;
+  top: 50%;
+  left: calc(100% + 12px);
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(6px, -50%);
+  transition: opacity 140ms ease, transform 180ms var(--button-ease);
+  white-space: nowrap;
+}
+
+@media (min-width: 1081px) {
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .app-shell.sidebar-collapsed .sidebar {
+    padding-inline: 12px;
+  }
+
+  .app-shell.sidebar-collapsed .brand,
+  .app-shell.sidebar-collapsed .nav-item,
+  .app-shell.sidebar-collapsed .sidebar-user-card,
+  .app-shell.sidebar-collapsed .sidebar-login-button {
+    justify-content: center;
+    gap: 0;
+  }
+
+  .app-shell.sidebar-collapsed .brand {
+    padding-inline: 0;
+  }
+
+  .app-shell.sidebar-collapsed .brand > span:last-child {
+    display: none;
+  }
+
+  .app-shell.sidebar-collapsed .nav-item {
+    padding-inline: 0;
+  }
+
+  .app-shell.sidebar-collapsed .brand > span:last-child,
+  .app-shell.sidebar-collapsed .nav-item > span:nth-child(2),
+  .app-shell.sidebar-collapsed .sidebar-user-name,
+  .app-shell.sidebar-collapsed .sidebar-login-button > span:not(.sidebar-user-avatar):not(.sidebar-tooltip) {
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  .app-shell.sidebar-collapsed .icon {
+    flex: 0 0 22px;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-collapse-button svg {
+    transform: rotate(180deg);
+  }
+
+  .app-shell.sidebar-collapsed .nav-item:hover .sidebar-tooltip,
+  .app-shell.sidebar-collapsed .nav-item:focus-visible .sidebar-tooltip,
+  .app-shell.sidebar-collapsed .sidebar-login-button:hover .sidebar-tooltip,
+  .app-shell.sidebar-collapsed .sidebar-login-button:focus-visible .sidebar-tooltip {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-panel {
+    position: relative;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-user-more {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 22px;
+    height: 22px;
+    background: var(--surface-3);
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-user-menu {
+    position: absolute;
+    z-index: 20;
+    bottom: 0;
+    left: 64px;
+    width: 180px;
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
 }
 
 :root[data-theme="dark"] .sidebar,
@@ -2652,6 +2830,10 @@ button:focus-visible,
     transition: transform 180ms ease;
   }
 
+  .sidebar-collapse-button {
+    display: none;
+  }
+
   .sidebar.open {
     transform: translateX(0);
   }
@@ -2769,5 +2951,184 @@ button:focus-visible,
 
   .loadout-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Unified button motion ----------------------------------------------------
+   This layer intentionally targets native and button-styled links so that
+   controls injected by app.js inherit the same feedback automatically. */
+button,
+a.primary-button,
+a.ghost-button,
+a.chip-button,
+a.tool-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 180ms var(--button-ease),
+    background-color 180ms var(--button-ease),
+    border-color 180ms var(--button-ease),
+    box-shadow 220ms var(--button-ease),
+    opacity 180ms ease,
+    transform 160ms var(--button-ease);
+}
+
+button {
+  cursor: pointer;
+}
+
+button::after {
+  position: absolute;
+  z-index: 3;
+  width: 16px;
+  height: 16px;
+  left: var(--button-ripple-x, 50%);
+  top: var(--button-ripple-y, 50%);
+  border-radius: 50%;
+  background: var(--button-ripple);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+}
+
+button.is-rippling::after {
+  animation: button-ripple 520ms var(--button-ease);
+}
+
+.primary-button::before {
+  position: absolute;
+  inset: -70% auto -70% -55%;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, var(--button-highlight), transparent);
+  content: "";
+  pointer-events: none;
+  transform: skewX(-18deg) translateX(-220%);
+  transition: transform 480ms var(--button-ease);
+}
+
+.primary-button:hover::before,
+.primary-button:focus-visible::before {
+  transform: skewX(-18deg) translateX(520%);
+}
+
+button:focus-visible,
+a.primary-button:focus-visible,
+a.ghost-button:focus-visible,
+a.chip-button:focus-visible,
+a.tool-button:focus-visible {
+  outline: 3px solid var(--button-ring);
+  outline-offset: 2px;
+}
+
+button:disabled,
+button[aria-disabled="true"] {
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.46;
+  transform: none;
+}
+
+button:disabled::before,
+button:disabled::after,
+button[aria-disabled="true"]::before,
+button[aria-disabled="true"]::after {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):not([aria-disabled="true"]):hover,
+  a.primary-button:hover,
+  a.ghost-button:hover,
+  a.chip-button:hover,
+  a.tool-button:hover {
+    box-shadow: var(--button-shadow);
+    transform: translateY(-2px);
+  }
+
+  .primary-button:not(:disabled):hover {
+    box-shadow: 0 10px 24px rgba(17, 24, 39, 0.2);
+  }
+
+  .dc-danger-button:hover,
+  .session-action-menu button.danger:hover {
+    box-shadow: 0 8px 18px rgba(217, 45, 32, 0.16);
+  }
+}
+
+button:not(:disabled):not([aria-disabled="true"]):active,
+a.primary-button:active,
+a.ghost-button:active,
+a.chip-button:active,
+a.tool-button:active {
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.12);
+  transform: translateY(0) scale(0.97);
+  transition-duration: 80ms;
+}
+
+.dc-tab.active,
+.auth-tabs .active,
+.modifier-gun-button.active,
+.modifier-attachment-option.active,
+.react-event.active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 26%, transparent), 0 5px 14px rgba(17, 24, 39, 0.08);
+}
+
+@keyframes button-ripple {
+  0% {
+    opacity: 0.42;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  70% {
+    opacity: 0.16;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a.primary-button,
+  a.ghost-button,
+  a.chip-button,
+  a.tool-button,
+  .primary-button::before {
+    transition-duration: 0.01ms !important;
+  }
+
+  .app-shell,
+  .sidebar-collapse-button svg,
+  .brand,
+  .brand > span:last-child,
+  .nav-item,
+  .nav-item > span:nth-child(2),
+  .sidebar-user-card,
+  .sidebar-user-name,
+  .sidebar-login-button,
+  .sidebar-login-button > span:not(.sidebar-user-avatar):not(.sidebar-tooltip),
+  .sidebar-tooltip {
+    transition-duration: 0.01ms !important;
+  }
+
+  button.is-rippling::after {
+    animation: none;
+  }
+
+  button:not(:disabled):not([aria-disabled="true"]):hover,
+  button:not(:disabled):not([aria-disabled="true"]):active,
+  a.primary-button:hover,
+  a.primary-button:active,
+  a.ghost-button:hover,
+  a.ghost-button:active,
+  a.chip-button:hover,
+  a.chip-button:active,
+  a.tool-button:hover,
+  a.tool-button:active {
+    transform: none;
   }
 }

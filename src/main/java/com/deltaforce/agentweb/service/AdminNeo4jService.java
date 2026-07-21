@@ -6,7 +6,7 @@ import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
-import org.neo4j.driver.Transaction;
+import org.neo4j.driver.TransactionContext;
 import org.neo4j.driver.summary.ResultSummary;
 import org.neo4j.driver.summary.SummaryCounters;
 import org.neo4j.driver.types.Node;
@@ -64,13 +64,13 @@ public class AdminNeo4jService {
 
         try (Session session = driver.session(SessionConfig.forDatabase(safeDatabase))) {
             if (write) {
-                return session.writeTransaction(tx -> executeInTransaction(tx, safeDatabase, safeQuery, safeParameters, true, limit));
+                return session.executeWrite(tx -> executeInTransaction(tx, safeDatabase, safeQuery, safeParameters, true, limit));
             }
-            return session.readTransaction(tx -> executeInTransaction(tx, safeDatabase, safeQuery, safeParameters, false, limit));
+            return session.executeRead(tx -> executeInTransaction(tx, safeDatabase, safeQuery, safeParameters, false, limit));
         }
     }
 
-    private Map<String, Object> executeInTransaction(Transaction tx, String database, String query,
+    private Map<String, Object> executeInTransaction(TransactionContext tx, String database, String query,
                                                       Map<String, Object> parameters, boolean write, int limit) {
         Result result = tx.run(query, parameters);
         List<String> columns = new ArrayList<String>(result.keys());
@@ -136,6 +136,7 @@ public class AdminNeo4jService {
         return value;
     }
 
+    @SuppressWarnings("deprecation") // Keep numeric IDs compatible with the existing admin console payload.
     private Object jsonValue(Object value) {
         if (value == null) return null;
         if (value instanceof Node) {

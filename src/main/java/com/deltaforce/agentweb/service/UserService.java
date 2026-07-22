@@ -51,6 +51,19 @@ public class UserService {
         } catch (Exception ignored) {
             // Neo4j may be offline during Spring startup; request endpoints will surface connection errors.
         }
+        // Keep this migration separate from schema setup. A constraint failure must not
+        // prevent an older reserved admin account from regaining administrator access.
+        try (Session session = session()) {
+            session.executeWrite(tx -> {
+                tx.run("MATCH (u:AgentUser) " +
+                                "WHERE toLower(u.username) = 'admin' AND coalesce(u.role, 'USER') <> 'ADMIN' " +
+                                "SET u.role = 'ADMIN', u.updatedAt = $now",
+                        Values.parameters("now", Instant.now().toString())).consume();
+                return null;
+            });
+        } catch (Exception ignored) {
+            // AdminService performs the same one-time repair on the first authorized request.
+        }
     }
 
     private void ensureUserDatabase() {

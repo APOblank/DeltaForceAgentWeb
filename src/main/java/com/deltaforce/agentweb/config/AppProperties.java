@@ -116,6 +116,7 @@ public class AppProperties {
         private String baseUrl;
         private String apiKey;
         private String model;
+        private boolean preloadPersonalStats;
 
         public String getBaseUrl() {
             return baseUrl;
@@ -140,6 +141,14 @@ public class AppProperties {
         public void setModel(String model) {
             this.model = model;
         }
+
+        public boolean isPreloadPersonalStats() {
+            return preloadPersonalStats;
+        }
+
+        public void setPreloadPersonalStats(boolean preloadPersonalStats) {
+            this.preloadPersonalStats = preloadPersonalStats;
+        }
     }
 
     public static class RealtimeData {
@@ -161,7 +170,6 @@ public class AppProperties {
         private String database;
         private String userDatabase;
         private String statsDatabase = "sjzuserdata";
-        private boolean statsMigrationEnabled = true;
 
         public String getUri() {
             return uri;
@@ -205,8 +213,6 @@ public class AppProperties {
 
         public String getStatsDatabase() { return statsDatabase; }
         public void setStatsDatabase(String statsDatabase) { this.statsDatabase = statsDatabase; }
-        public boolean isStatsMigrationEnabled() { return statsMigrationEnabled; }
-        public void setStatsMigrationEnabled(boolean statsMigrationEnabled) { this.statsMigrationEnabled = statsMigrationEnabled; }
     }
 
     public static class Data {

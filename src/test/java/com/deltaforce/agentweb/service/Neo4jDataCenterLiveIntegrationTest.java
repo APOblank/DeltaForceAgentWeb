@@ -20,11 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @EnabledIfSystemProperty(named = "liveNeo4j", matches = "true")
 @SpringBootTest(
         classes = DeltaForceAgentWebApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = {
-                "spring.datasource.url=jdbc:h2:mem:neo4j-live-smoke;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
-                "delta-force.neo4j.stats-migration-enabled=false"
-        })
+        webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class Neo4jDataCenterLiveIntegrationTest {
     @Autowired
     private Neo4jDataCenterService service;

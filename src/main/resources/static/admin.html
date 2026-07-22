@@ -67,6 +67,14 @@
               <article class="metric-card"><span>可管理数据库</span><strong id="metric-databases">—</strong><small>配置白名单</small></article>
               <article class="metric-card"><span>内容更新时间</span><strong id="metric-updated">—</strong><small>今日资讯</small></article>
             </div>
+            <article class="card registration-control" aria-labelledby="registration-heading">
+              <div>
+                <span class="badge" id="registration-badge">REGISTRATION</span>
+                <h3 id="registration-heading">新用户注册</h3>
+                <p id="registration-description">正在读取注册状态…</p>
+              </div>
+              <button id="registration-toggle" class="secondary-button" type="button" aria-pressed="false" disabled>读取状态…</button>
+            </article>
             <div class="overview-grid">
               <article class="card"><div class="card-heading"><div><span class="badge">QUICK START</span><h3>常用管理入口</h3></div></div><div class="quick-actions"><button type="button" data-jump="users"><strong>查看用户会话</strong><span>按用户审阅聊天记录</span></button><button type="button" data-jump="database"><strong>查询 Neo4j</strong><span>运行只读或写入 Cypher</span></button><button type="button" data-jump="content"><strong>更新今日内容</strong><span>密码、推荐与资讯</span></button></div></article>
               <article class="card safety-card"><span class="badge amber">SAFETY</span><h3>数据库操作保护</h3><ul><li>仅允许访问应用配置的三个数据库</li><li>写入模式需要二次确认</li><li>禁止数据库、用户和角色等系统级命令</li><li>查询结果最多返回 500 行</li></ul></article>

@@ -181,7 +181,7 @@ public class ChatProxyService {
         payload.put("conversation_mode", StringUtils.hasText(conversationMode) ? conversationMode : "auto");
 
         List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
-        if (StringUtils.hasText(userId)) {
+        if (properties.getFastapi().isPreloadPersonalStats() && StringUtils.hasText(userId)) {
             try {
                 Map<String, Object> stats = statsService.buildAiContext(userId, message);
                 Object summaryObject = stats.get("summary");

@@ -37,12 +37,12 @@ import java.util.UUID;
 public class Neo4jDataCenterService {
     private final Driver driver;
     private final StatsDatabaseInitializer initializer;
-    private final DataCenterService legacyStore;
+    private final LegacyBackupParser legacyBackupParser;
 
-    public Neo4jDataCenterService(Driver driver, StatsDatabaseInitializer initializer, DataCenterService legacyStore) {
+    public Neo4jDataCenterService(Driver driver, StatsDatabaseInitializer initializer, LegacyBackupParser legacyBackupParser) {
         this.driver = driver;
         this.initializer = initializer;
-        this.legacyStore = legacyStore;
+        this.legacyBackupParser = legacyBackupParser;
     }
 
     public List<Map<String, Object>> accounts(String userId) {
@@ -160,19 +160,12 @@ public class Neo4jDataCenterService {
         return result;
     }
 
-    // Compatibility bridge: parse the original encrypted/SQLite backup with the
-    // already tested legacy importer, then immediately move its canonical export
-    // into the tenant-scoped graph database.
     public Map<String, Object> importLegacyBackup(String userId, byte[] zipBytes) {
-        Map<String, Object> result = legacyStore.importLegacyBackup(userId, zipBytes);
-        migrateUserFromLegacyStore(userId);
-        return result;
+        return importLegacyPayloads(userId, legacyBackupParser.parse(zipBytes));
     }
 
     public Map<String, Object> importLegacyBackup(String userId, InputStream zipStream) {
-        Map<String, Object> result = legacyStore.importLegacyBackup(userId, zipStream);
-        migrateUserFromLegacyStore(userId);
-        return result;
+        return importLegacyPayloads(userId, legacyBackupParser.parse(zipStream));
     }
 
     public Map<String, Object> summary(String userId, String requestedAccountId) {
@@ -391,28 +384,26 @@ public class Neo4jDataCenterService {
         return context;
     }
 
-    public void migrateUserFromLegacyStore(String userId) {
-        for (Map<String, Object> account : legacyStore.accounts(userId)) {
-            importData(userId, legacyStore.exportData(userId, String.valueOf(account.get("id"))));
+    private Map<String, Object> importLegacyPayloads(String userId, List<Map<String, Object>> payloads) {
+        int insertedBattles = 0;
+        int updatedBattles = 0;
+        int players = 0;
+        int items = 0;
+        for (Map<String, Object> payload : payloads) {
+            Map<String, Object> imported = importData(userId, payload);
+            insertedBattles += number(imported.get("insertedBattles")).intValue();
+            updatedBattles += number(imported.get("updatedBattles")).intValue();
+            players += number(imported.get("players")).intValue();
+            items += number(imported.get("items")).intValue();
         }
-    }
-
-    public boolean migrationCompleted(String marker) {
-        try (Session session = session()) {
-            return session.executeRead(tx -> tx.run(
-                    "MATCH (m:StatsMigration {id:$id}) RETURN count(m)>0 AS done", params("id", marker))
-                    .single().get("done").asBoolean());
-        }
-    }
-
-    public void markMigrationCompleted(String marker) {
-        try (Session session = session()) {
-            session.executeWrite(tx -> {
-                tx.run("MERGE (m:StatsMigration {id:$id}) SET m.completedAt=$now",
-                        params("id", marker, "now", now())).consume();
-                return null;
-            });
-        }
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        result.put("accountsImported", payloads.size());
+        result.put("insertedBattles", insertedBattles);
+        result.put("updatedBattles", updatedBattles);
+        result.put("players", players);
+        result.put("items", items);
+        result.put("format", "delta-force-data-center-backup-v1");
+        return result;
     }
 
     private void replaceChildren(TransactionContext tx, String userId, String battleId, String selfPlayerId,

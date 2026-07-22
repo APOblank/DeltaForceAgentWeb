@@ -2,9 +2,6 @@ spring:
   config:
     activate:
       on-profile: prod
-  flyway:
-    validate-on-migrate: true
-    clean-disabled: true
 
 delta-force:
   security:

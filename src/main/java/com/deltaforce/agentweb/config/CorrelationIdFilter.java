@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Request-ID";
-    private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{8,64}");
+    private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9_.:@-]{1,128}");
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

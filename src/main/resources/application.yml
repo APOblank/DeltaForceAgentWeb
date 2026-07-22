@@ -42,7 +42,7 @@ spring:
       max-request-size: 105MB
   mvc:
     async:
-      request-timeout: 120s
+      request-timeout: 135s
   jackson:
     default-property-inclusion: non_null
 

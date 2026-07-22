@@ -11,13 +11,13 @@ public class ChatRequest {
     private String message;
     private Boolean debug;
     private Boolean reactEvents;
-    @Size(max = 64, message = "sessionId 过长")
-    @Pattern(regexp = "^[A-Za-z0-9._:-]*$", message = "sessionId 格式不合法")
+    @Size(max = 128, message = "sessionId 过长")
+    @Pattern(regexp = "^$|^[A-Za-z0-9_.:@-]+$", message = "sessionId 格式不合法")
     private String sessionId;
-    @Size(max = 64, message = "messageId 过长")
-    @Pattern(regexp = "^[A-Za-z0-9._:-]*$", message = "messageId 格式不合法")
+    @Size(max = 128, message = "messageId 过长")
+    @Pattern(regexp = "^$|^[A-Za-z0-9_.:@-]+$", message = "messageId 格式不合法")
     private String messageId;
-    @Pattern(regexp = "^(auto|plan|execute)?$", message = "conversationMode 不受支持")
+    @Pattern(regexp = "^(auto|continue|new)?$", message = "conversationMode 不受支持")
     private String conversationMode;
 
     public String getMessage() {

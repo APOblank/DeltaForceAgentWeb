@@ -257,7 +257,32 @@ public class ApiController {
 
     @PostMapping("/auth/register")
     public AuthResponse register(@Valid @RequestBody AuthRequest request) {
+        if (!adminService.registrationEnabled()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "当前未开放新用户注册");
+        }
         return userService.register(request.getUsername(), request.getPassword());
+    }
+
+    @GetMapping("/auth/registration")
+    public Map<String, Object> registrationStatus() {
+        return Map.of("enabled", adminService.registrationEnabled());
+    }
+
+    @PatchMapping("/admin/registration")
+    public Map<String, Object> updateRegistration(
+            HttpServletRequest request,
+            @RequestBody Map<String, Object> body
+    ) {
+        adminService.requireAdmin(requireUser(request));
+        Object enabled = body == null ? null : body.get("enabled");
+        if (!(enabled instanceof Boolean)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "enabled 必须是布尔值");
+        }
+        Map<String, Object> content = adminService.setRegistrationEnabled((Boolean) enabled);
+        return Map.of(
+                "enabled", Boolean.TRUE.equals(content.get("registrationEnabled")),
+                "updatedAt", content.getOrDefault("updatedAt", "")
+        );
     }
 
     @PostMapping("/auth/login")

@@ -31,12 +31,31 @@ public class AdminService {
 
     public void requireAdmin(String userId) {
         try (Session session = session()) {
-            boolean allowed = session.executeRead(tx -> tx.run(
-                    "MATCH (u:AgentUser {userId: $userId}) RETURN u.role = 'ADMIN' AS allowed",
-                    Values.parameters("userId", userId)
-            ).single().get("allowed").asBoolean(false));
+            Record user = session.executeRead(tx -> {
+                Result result = tx.run(
+                        "MATCH (u:AgentUser {userId: $userId}) " +
+                                "RETURN coalesce(u.role, 'USER') AS role, u.username AS username LIMIT 1",
+                        Values.parameters("userId", userId));
+                return result.hasNext() ? result.next() : null;
+            });
+            String role = user == null ? "" : user.get("role").asString("");
+            String username = user == null ? "" : user.get("username").asString("");
+            boolean allowed = isAdminIdentity(role, username);
             if (!allowed) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员账户可使用此功能");
+            if (!UserService.ROLE_ADMIN.equalsIgnoreCase(role)) {
+                session.executeWrite(tx -> {
+                    tx.run("MATCH (u:AgentUser {userId: $userId}) " +
+                                    "SET u.role = 'ADMIN', u.updatedAt = $now",
+                            Values.parameters("userId", userId, "now", Instant.now().toString())).consume();
+                    return null;
+                });
+            }
         }
+    }
+
+    static boolean isAdminIdentity(String role, String username) {
+        return UserService.ROLE_ADMIN.equalsIgnoreCase(role)
+                || "admin".equalsIgnoreCase(username);
     }
 
     public List<Map<String, Object>> users() {
@@ -78,6 +97,14 @@ public class AdminService {
         }
     }
 
+    public boolean registrationEnabled() {
+        return isRegistrationEnabled(dailyContent());
+    }
+
+    public Map<String, Object> setRegistrationEnabled(boolean enabled) {
+        return saveDailyContent(Map.of("registrationEnabled", enabled));
+    }
+
     public Map<String, Object> saveDailyContent(Map<String, Object> input) {
         Map<String, Object> merged = new HashMap<String, Object>(dailyContent());
         if (input != null) merged.putAll(input);
@@ -107,8 +134,16 @@ public class AdminService {
         data.put("aiPrompt", editable(source, "aiPrompt", "在此填写用于生成今日改枪推荐的提示词。"));
         data.put("newsContent", editable(source, "newsContent", "更多三角洲今日资讯即将上线。"));
         data.put("githubUrl", editable(source, "githubUrl", ""));
+        data.put("registrationEnabled", isRegistrationEnabled(source));
         data.put("updatedAt", string(source.get("updatedAt"), ""));
         return data;
+    }
+
+    static boolean isRegistrationEnabled(Map<String, Object> source) {
+        Object value = source == null ? null : source.get("registrationEnabled");
+        return value instanceof Boolean booleanValue
+                ? booleanValue
+                : "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     private String string(Object value, String fallback) {

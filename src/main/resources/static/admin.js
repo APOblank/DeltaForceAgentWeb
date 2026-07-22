@@ -1,10 +1,16 @@
-const storedUser = JSON.parse(localStorage.getItem("delta-force-user") || "null");
+function readSessionJson(key) {
+  try { return JSON.parse(sessionStorage.getItem(key) || "null"); }
+  catch { sessionStorage.removeItem(key); return null; }
+}
+
+const storedUser = readSessionJson("delta-force-user");
 const state = {
   user: storedUser,
   users: [],
   selectedUserId: "",
   selectedSessionId: "",
   databases: [],
+  registrationEnabled: false,
   alertTimer: null,
 };
 
@@ -21,6 +27,10 @@ const queryExamples = {
   nodes: "MATCH (n) RETURN n ORDER BY id(n) DESC LIMIT 25",
   users: "MATCH (u:AgentUser) RETURN u ORDER BY u.createdAt DESC LIMIT 50",
 };
+
+function isAdminUser(user = state.user) {
+  return user?.role === "ADMIN" || user?.username?.toLowerCase() === "admin";
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -49,7 +59,7 @@ async function api(path, options = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem("delta-force-user");
+      sessionStorage.removeItem("delta-force-user");
       state.user = null;
       showGuard();
     }
@@ -76,6 +86,55 @@ function showWorkspace() {
   document.querySelector("#admin-guard").hidden = true;
   document.querySelector("#admin-workspace").hidden = false;
   document.querySelector("#admin-identity").textContent = state.user?.displayName || state.user?.username || "管理员";
+}
+
+function renderRegistrationControl(enabled) {
+  state.registrationEnabled = Boolean(enabled);
+  const control = document.querySelector(".registration-control");
+  const badge = document.querySelector("#registration-badge");
+  const description = document.querySelector("#registration-description");
+  const button = document.querySelector("#registration-toggle");
+  if (!control || !badge || !description || !button) return;
+  control.classList.toggle("enabled", state.registrationEnabled);
+  badge.classList.toggle("amber", !state.registrationEnabled);
+  badge.textContent = state.registrationEnabled ? "REGISTRATION ON" : "REGISTRATION OFF";
+  description.textContent = state.registrationEnabled
+    ? "当前允许访客创建新账户。关闭后，注册页面和注册接口都会停止接受新用户。"
+    : "当前禁止创建新账户。只有管理员开启后，访客才能注册。";
+  button.textContent = state.registrationEnabled ? "关闭注册" : "开启注册";
+  button.className = state.registrationEnabled ? "danger-button" : "primary-button";
+  button.setAttribute("aria-pressed", String(state.registrationEnabled));
+  button.disabled = false;
+}
+
+async function toggleRegistration() {
+  const button = document.querySelector("#registration-toggle");
+  const nextEnabled = !state.registrationEnabled;
+  button.disabled = true;
+  button.textContent = nextEnabled ? "正在开启…" : "正在关闭…";
+  try {
+    const result = await api("/api/admin/registration", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: nextEnabled }),
+    });
+    renderRegistrationControl(result.enabled);
+    showAlert(result.enabled ? "新用户注册已开启" : "新用户注册已关闭");
+  } catch (error) {
+    renderRegistrationControl(state.registrationEnabled);
+    showAlert(error.message, "error");
+  }
+}
+
+async function loadRegistrationStatus() {
+  try {
+    const content = await api("/api/admin/daily-content");
+    renderRegistrationControl(content.registrationEnabled);
+  } catch (error) {
+    const button = document.querySelector("#registration-toggle");
+    button.disabled = true;
+    button.textContent = "状态不可用";
+    showAlert(error.message, "error");
+  }
 }
 
 function setPanel(panel, updateHash = true) {
@@ -122,6 +181,7 @@ async function loadOverview() {
     document.querySelector("#metric-sessions").textContent = users.reduce((sum, user) => sum + Number(user.sessionCount || 0), 0).toLocaleString("zh-CN");
     document.querySelector("#metric-databases").textContent = state.databases.length;
     document.querySelector("#metric-updated").textContent = content.updatedAt ? formatDate(content.updatedAt).split(" ")[0] : "未发布";
+    renderRegistrationControl(content.registrationEnabled);
   } catch (error) {
     showAlert(error.message, "error");
   } finally {
@@ -344,6 +404,7 @@ async function refreshMarket(event) {
 document.querySelectorAll("[data-panel]").forEach((button) => button.addEventListener("click", () => setPanel(button.dataset.panel)));
 document.querySelectorAll("[data-jump]").forEach((button) => button.addEventListener("click", () => setPanel(button.dataset.jump)));
 document.querySelector("#overview-refresh").addEventListener("click", loadOverview);
+document.querySelector("#registration-toggle").addEventListener("click", toggleRegistration);
 document.querySelector("#content-form").addEventListener("submit", saveContent);
 document.querySelector("#content-reload").addEventListener("click", loadContent);
 document.querySelector("#users-refresh").addEventListener("click", loadUsers);
@@ -366,14 +427,15 @@ document.querySelectorAll("[data-query-example]").forEach((button) => button.add
 }));
 document.querySelector("#admin-menu").addEventListener("click", () => document.body.classList.contains("sidebar-open") ? closeSidebar() : openSidebar());
 document.querySelector("#sidebar-scrim").addEventListener("click", closeSidebar);
-document.querySelector("#admin-logout").addEventListener("click", () => { localStorage.removeItem("delta-force-user"); location.href = "/#/login"; });
+document.querySelector("#admin-logout").addEventListener("click", () => { sessionStorage.removeItem("delta-force-user"); location.href = "/#/login"; });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeSidebar(); });
 
-if (!state.user || state.user.username !== "admin" || !state.user.token) {
+if (!isAdminUser() || !state.user?.token) {
   showGuard();
 } else {
   showWorkspace();
   const initialPanel = location.hash.slice(1);
   setPanel(panelTitles[initialPanel] ? initialPanel : "overview", false);
+  loadRegistrationStatus();
   loadOverview();
 }

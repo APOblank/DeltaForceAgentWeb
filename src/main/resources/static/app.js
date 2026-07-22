@@ -50,6 +50,8 @@ const state = {
   dataCenterFilters: { map: "", result: "", start: "", end: "" },
 };
 
+let mobileChatMediaQuery = null;
+
 const pageTitles = {
   "/": "三角洲行动智能体",
   "/chat": "智能对话",
@@ -76,7 +78,7 @@ const pageTitlesEn = {
   "/login": "Account Login",
 };
 
-const publicRoutes = new Set(["/", "/market", "/gun-modifier", "/readiness", "/news", "/login"]);
+const publicRoutes = new Set(["/", "/news", "/login"]);
 
 const mockMarketItems = [
   { name: "0.0", type: "枪械", price: 0, change: 0.0 },
@@ -208,11 +210,15 @@ function setUser(user) {
   renderTopActions();
 }
 
+function isAdminUser(user = state.user) {
+  return user?.role === "ADMIN" || user?.username?.toLowerCase() === "admin";
+}
+
 function renderTopActions() {
   renderSidebarUser();
   syncSidebarLabels();
   const adminNav = document.querySelector('[data-admin-link]');
-  if (adminNav) adminNav.hidden = state.user?.role !== "ADMIN";
+  if (adminNav) adminNav.hidden = !isAdminUser();
   if (!state.user) {
     topActions.innerHTML = topToolsMarkup();
     bindTopTools();
@@ -416,14 +422,23 @@ function defaultChatMessages() {
 function chatPage() {
   return `
     <div class="chat-layout">
-      <aside class="panel chat-list">
-        <div class="session-header">
-          <h3>历史记录</h3>
-          <button class="chip-button" id="new-session-button" type="button">新建</button>
-        </div>
-        <button id="archive-toggle-button" class="chip-button session-archive-toggle" type="button">查看归档</button>
-        <div id="session-list">
-          ${state.user ? `<div class="empty-state compact">正在读取会话...</div>` : `<div class="empty-state compact">登录后保存和读取历史对话</div>`}
+      <aside class="panel chat-list mobile-chat-panel" data-mobile-chat-panel>
+        <button class="mobile-chat-panel-toggle" type="button" aria-expanded="false" aria-controls="history-panel-content">
+          <span class="mobile-chat-panel-label">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"></path></svg>
+            <span><strong>历史记录</strong><small id="history-panel-summary">点击展开会话列表</small></span>
+          </span>
+          <svg class="mobile-chat-panel-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+        </button>
+        <div class="mobile-chat-panel-content chat-list-content" id="history-panel-content">
+          <div class="session-header">
+            <h3>历史记录</h3>
+            <button class="chip-button" id="new-session-button" type="button">新建</button>
+          </div>
+          <button id="archive-toggle-button" class="chip-button session-archive-toggle" type="button">查看归档</button>
+          <div id="session-list">
+            ${state.user ? `<div class="empty-state compact">正在读取会话...</div>` : `<div class="empty-state compact">登录后保存和读取历史对话</div>`}
+          </div>
         </div>
       </aside>
       <section class="panel chat-main">
@@ -434,20 +449,29 @@ function chatPage() {
           <button class="primary-button" type="submit" ${state.chatSending ? "disabled" : ""}>发送</button>
         </form>
       </section>
-      <aside class="panel react-panel">
-        <div class="react-head">
-          <div>
-            <span class="badge blue">ReAct</span>
-            <h3>执行过程</h3>
-            <span id="conversation-status" class="conversation-status" hidden></span>
+      <aside class="panel react-panel mobile-chat-panel" data-mobile-chat-panel>
+        <button class="mobile-chat-panel-toggle" type="button" aria-expanded="false" aria-controls="react-panel-content">
+          <span class="mobile-chat-panel-label">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6v6H5zM13 13h6v6h-6zM14 5h5v5M5 14h5v5"></path></svg>
+            <span><strong>执行过程</strong><small id="react-panel-summary">点击查看任务执行详情</small></span>
+          </span>
+          <svg class="mobile-chat-panel-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+        </button>
+        <div class="mobile-chat-panel-content react-panel-content" id="react-panel-content">
+          <div class="react-head">
+            <div>
+              <span class="badge blue">ReAct</span>
+              <h3>执行过程</h3>
+              <span id="conversation-status" class="conversation-status" hidden></span>
+            </div>
+            <button class="chip-button" id="export-react-button" type="button">导出</button>
           </div>
-          <button class="chip-button" id="export-react-button" type="button">导出</button>
-        </div>
-        <div class="react-timeline" id="react-timeline">
-          <div class="empty-state compact">发送问题后展示任务拆解、工具调用和观察结果。</div>
-        </div>
-        <div class="react-detail" id="react-detail">
-          <div class="empty-state compact">点击事件查看 payload JSON。</div>
+          <div class="react-timeline" id="react-timeline">
+            <div class="empty-state compact">发送问题后展示任务拆解、工具调用和观察结果。</div>
+          </div>
+          <div class="react-detail" id="react-detail">
+            <div class="empty-state compact">点击事件查看 payload JSON。</div>
+          </div>
         </div>
       </aside>
     </div>
@@ -456,15 +480,19 @@ function chatPage() {
 
 function renderSessionList() {
   const container = document.querySelector("#session-list");
+  const summary = document.querySelector("#history-panel-summary");
   if (!container) return;
   if (!state.user) {
+    if (summary) summary.textContent = "登录后查看历史会话";
     container.innerHTML = `<div class="empty-state compact">登录后保存和读取历史对话</div>`;
     return;
   }
   if (!state.sessions.length) {
+    if (summary) summary.textContent = state.showArchivedSessions ? "暂无归档会话" : "暂无历史会话";
     container.innerHTML = `<div class="empty-state compact">暂无历史记录</div>`;
     return;
   }
+  if (summary) summary.textContent = `${state.sessions.length} 条${state.showArchivedSessions ? "归档" : "历史"}会话`;
   container.innerHTML = state.sessions.map((session) => `
     <article class="session-item ${session.sessionId === state.activeSessionId ? "active" : ""} ${state.pendingChats[session.sessionId]?.status === "running" ? "pending" : ""}" data-session-id="${session.sessionId}">
       <strong>${escapeHtml(session.title || "新的对话")}</strong>
@@ -745,7 +773,7 @@ function thinkingMarkup(events) {
 
 function gunModCtaMarkup(messageId, events) {
   if (!messageId || !isGunModHandoff(events) || !hasFinalAnswer(events)) return "";
-  const publish = state.user?.role === "ADMIN" ? `<button class="message-gunmod-button secondary" type="button" data-publish-gunmod-message="${escapeHtml(messageId)}">发布到推荐</button>` : "";
+  const publish = isAdminUser() ? `<button class="message-gunmod-button secondary" type="button" data-publish-gunmod-message="${escapeHtml(messageId)}">发布到推荐</button>` : "";
   return `<span class="message-gunmod-actions"><button class="message-gunmod-button" type="button" data-gunmod-message="${escapeHtml(messageId)}">在改枪台中装配</button>${publish}</span>`;
 }
 
@@ -921,16 +949,22 @@ function loadSessionTasks() {
 function renderReactTimeline() {
   const timeline = document.querySelector("#react-timeline");
   const detail = document.querySelector("#react-detail");
+  const summary = document.querySelector("#react-panel-summary");
   if (!timeline || !detail) return;
   if (!state.reactEvents.length) {
+    if (summary) summary.textContent = "点击查看任务执行详情";
     timeline.innerHTML = `<div class="empty-state compact">点击带 ReAct 标识的回复，查看这条回复的执行过程。</div>`;
     detail.innerHTML = `<div class="empty-state compact">点击事件查看 payload JSON。</div>`;
     return;
   }
-  timeline.innerHTML = state.reactEvents.map((event) => `
-    <button class="react-event ${event.status || "running"} ${event.event_id === state.selectedReactEventId ? "active" : ""}" type="button" data-react-id="${escapeHtml(event.event_id)}">
-      <span class="react-dot"></span>
-      <span>
+  if (summary) summary.textContent = `${state.reactEvents.length} 个执行事件`;
+  timeline.innerHTML = state.reactEvents.map((event, index) => `
+    <button class="react-event ${event.status || "running"} ${event.event_id === state.selectedReactEventId ? "active" : ""}" type="button" data-react-id="${escapeHtml(event.event_id)}" aria-pressed="${event.event_id === state.selectedReactEventId}">
+      <span class="react-event-marker" aria-hidden="true">
+        <span class="react-dot"></span>
+        <span class="react-event-index">${index + 1}</span>
+      </span>
+      <span class="react-event-content">
         <strong>${escapeHtml(event.title || phaseName(event.phase))}</strong>
         <small>${escapeHtml(phaseName(event.phase))}${event.node ? ` · ${escapeHtml(event.node)}` : ""}</small>
         ${event.summary ? `<em>${escapeHtml(event.summary)}</em>` : ""}
@@ -1438,7 +1472,7 @@ function newsPage() {
 }
 
 function adminPage() {
-  if (state.user?.role !== "ADMIN") return `<section class="panel admin-denied"><span class="badge amber">RESTRICTED</span><h2>管理员权限必需</h2><p>当前账号没有管理权限。</p></section>`;
+  if (!isAdminUser()) return `<section class="panel admin-denied"><span class="badge amber">RESTRICTED</span><h2>管理员权限必需</h2><p>请使用管理员账户登录后访问管理后台。</p></section>`;
   return `<div class="admin-layout">
     <section class="panel admin-github"><div class="section-title"><h3>GitHub &#20179;&#24211;&#38142;&#25509;</h3><span id="admin-github-status" class="form-status"></span></div><form id="admin-github-form" class="admin-form"><div class="field"><label for="admin-github-url">GitHub URL</label><input id="admin-github-url" type="url" placeholder="https://github.com/owner/repository" /></div><button class="primary-button" type="submit">&#20445;&#23384;&#38142;&#25509;</button></form></section>
     <section class="panel admin-head"><div><span class="eyebrow">CONTROL CENTER</span><h2>管理员界面</h2><p>管理用户、今日资讯内容与实时市场数据。</p></div><span class="badge">ADMIN</span></section>
@@ -1503,10 +1537,10 @@ function dataCenterPage() {
           <button id="dc-export" class="ghost-button" type="button">导出备份</button>
         </div>
       </section>
-      <nav class="dc-tabs" aria-label="数据中心视图">
-        ${[["overview","总览"],["records","战绩"],["analysis","分析"],["trends","趋势"],["items","物品"]].map(([key,label]) => `<button class="dc-tab${state.dataCenterTab === key ? " active" : ""}" type="button" data-dc-tab="${key}">${label}</button>`).join("")}
+      <nav class="dc-tabs" role="tablist" aria-label="数据中心视图">
+        ${[["overview","总览"],["records","战绩"],["analysis","分析"],["trends","趋势"],["items","物品"]].map(([key,label]) => `<button class="dc-tab${state.dataCenterTab === key ? " active" : ""}" type="button" role="tab" aria-selected="${state.dataCenterTab === key}" aria-controls="dc-content" data-dc-tab="${key}">${label}</button>`).join("")}
       </nav>
-      <section id="dc-content" class="dc-content" aria-live="polite"><div class="dc-loading"><span class="spinner" aria-hidden="true"></span>正在读取个人战绩…</div></section>
+      <section id="dc-content" class="dc-content" role="tabpanel" aria-live="polite"><div class="dc-loading"><span class="spinner" aria-hidden="true"></span>正在读取个人战绩…</div></section>
       <dialog id="dc-import-dialog" class="dc-dialog">
         <form method="dialog" class="dc-dialog-card" id="dc-import-form">
           <div class="dc-dialog-head"><div><div class="eyebrow">LOCAL IMPORT</div><h3>导入个人战绩</h3></div><button class="dc-icon-button" value="cancel" type="submit" aria-label="关闭导入窗口">×</button></div>
@@ -1555,7 +1589,11 @@ function bindDataCenter() {
   document.querySelectorAll("[data-dc-tab]").forEach((button) => button.addEventListener("click", () => {
     state.dataCenterTab = button.dataset.dcTab;
     state.dataCenterPage = 1;
-    document.querySelectorAll("[data-dc-tab]").forEach((item) => item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-dc-tab]").forEach((item) => {
+      const selected = item === button;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-selected", String(selected));
+    });
     loadDataCenterTab();
   }));
   document.querySelector("#dc-account-select")?.addEventListener("change", (event) => {
@@ -1632,7 +1670,7 @@ function dcMetric(label, value, hint, tone = "") {
 
 function dcRecordTable(rows, compact = false) {
   if (!rows?.length) return `<div class="dc-empty compact"><strong>暂无符合条件的战绩</strong><p>调整筛选条件，或导入新的对局数据。</p></div>`;
-  return `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>时间</th><th>地图 / 干员</th><th>结果</th><th>击杀</th><th>收益</th>${compact ? "" : "<th>时长</th>"}<th><span class="sr-only">操作</span></th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(dcDate(row.eventTime))}</td><td><strong>${escapeHtml(row.mapName || "未知地图")}</strong><small>${escapeHtml(row.roleName || "未知干员")}</small></td><td>${dcResult(row.gameResult)}</td><td class="dc-number">${dcNumber(row.playerKillCount)}</td><td class="dc-number ${Number(row.profitLoss) >= 0 ? "positive" : "negative"}">${Number(row.profitLoss) >= 0 ? "+" : ""}${dcNumber(row.profitLoss)}</td>${compact ? "" : `<td>${escapeHtml(dcDuration(row.durationSeconds))}</td>`}<td><button class="dc-row-action" type="button" data-battle-id="${escapeHtml(row.id)}">详情</button></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>时间</th><th>地图 / 干员</th><th>结果</th><th>击杀</th><th>收益</th>${compact ? "" : "<th>时长</th>"}<th><span class="sr-only">操作</span></th></tr></thead><tbody>${rows.map((row) => `<tr><td data-label="时间">${escapeHtml(dcDate(row.eventTime))}</td><td data-label="地图 / 干员"><strong>${escapeHtml(row.mapName || "未知地图")}</strong><small>${escapeHtml(row.roleName || "未知干员")}</small></td><td data-label="结果">${dcResult(row.gameResult)}</td><td data-label="击杀" class="dc-number">${dcNumber(row.playerKillCount)}</td><td data-label="收益" class="dc-number ${Number(row.profitLoss) >= 0 ? "positive" : "negative"}">${Number(row.profitLoss) >= 0 ? "+" : ""}${dcNumber(row.profitLoss)}</td>${compact ? "" : `<td data-label="时长">${escapeHtml(dcDuration(row.durationSeconds))}</td>`}<td data-label="操作"><button class="dc-row-action" type="button" data-battle-id="${escapeHtml(row.id)}">查看详情</button></td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function bindDcRecordRows() {
@@ -1717,7 +1755,7 @@ function loadDcTrends() {
   dcLoading("正在生成趋势…");
   const bucket = state.dataCenterFilters.bucket || "day";
   api(`/api/data-center/trends${dcQuery({ map: null, result: null, bucket })}`).then((data) => {
-    document.querySelector("#dc-content").innerHTML = dcFilterBar(`<label><span>粒度</span><select id="dc-trend-bucket"><option value="day"${bucket === "day" ? " selected" : ""}>按日</option><option value="week"${bucket === "week" ? " selected" : ""}>按周</option><option value="month"${bucket === "month" ? " selected" : ""}>按月</option></select></label>`) + `<section class="dc-panel"><div class="dc-panel-head"><div><h3>收益趋势</h3><p>折线节点可通过键盘聚焦查看精确数值</p></div></div>${dcTrendSvg(data.data || [])}<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>周期</th><th>对局</th><th>撤离率</th><th>击杀</th><th>收益</th></tr></thead><tbody>${(data.data || []).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${dcNumber(row.battles)}</td><td>${dcPercent(row.escapeRate)}</td><td>${dcNumber(row.playerKills)}</td><td class="dc-number ${Number(row.profit) >= 0 ? "positive" : "negative"}">${dcNumber(row.profit)}</td></tr>`).join("")}</tbody></table></div></section>`;
+    document.querySelector("#dc-content").innerHTML = dcFilterBar(`<label><span>粒度</span><select id="dc-trend-bucket"><option value="day"${bucket === "day" ? " selected" : ""}>按日</option><option value="week"${bucket === "week" ? " selected" : ""}>按周</option><option value="month"${bucket === "month" ? " selected" : ""}>按月</option></select></label>`) + `<section class="dc-panel"><div class="dc-panel-head"><div><h3>收益趋势</h3><p>折线节点可通过键盘聚焦查看精确数值</p></div></div>${dcTrendSvg(data.data || [])}<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>周期</th><th>对局</th><th>撤离率</th><th>击杀</th><th>收益</th></tr></thead><tbody>${(data.data || []).map((row) => `<tr><td data-label="周期">${escapeHtml(row.label)}</td><td data-label="对局">${dcNumber(row.battles)}</td><td data-label="撤离率">${dcPercent(row.escapeRate)}</td><td data-label="击杀">${dcNumber(row.playerKills)}</td><td data-label="收益" class="dc-number ${Number(row.profit) >= 0 ? "positive" : "negative"}">${dcNumber(row.profit)}</td></tr>`).join("")}</tbody></table></div></section>`;
     bindDcFilters(() => { state.dataCenterFilters.bucket = document.querySelector("#dc-trend-bucket")?.value || "day"; loadDcTrends(); });
   }).catch(dcError);
 }
@@ -1725,7 +1763,7 @@ function loadDcTrends() {
 function loadDcItems() {
   dcLoading("正在汇总带出物品…");
   api(`/api/data-center/items${dcQuery({ map: null, result: null })}`).then((data) => {
-    document.querySelector("#dc-content").innerHTML = dcFilterBar() + `<section class="dc-panel"><div class="dc-panel-head"><div><h3>带出物品</h3><p>累计估值 ${dcNumber(data.totalValue)}</p></div></div>${data.data?.length ? `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>物品</th><th>品质</th><th>数量</th><th>最高单价</th><th>累计价值</th></tr></thead><tbody>${data.data.map((item) => `<tr><td><strong>${escapeHtml(item.itemName || item.itemId || "未知物品")}</strong></td><td><span class="dc-grade grade-${Number(item.grade || 0)}">${dcNumber(item.grade)} 级</span></td><td>${dcNumber(item.quantity)}</td><td class="dc-number">${dcNumber(item.maxUnitPrice)}</td><td class="dc-number positive">${dcNumber(item.totalValue)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="dc-empty compact"><strong>暂无物品数据</strong><p>导入包含 items 的战绩后会显示汇总。</p></div>`}</section>`;
+    document.querySelector("#dc-content").innerHTML = dcFilterBar() + `<section class="dc-panel"><div class="dc-panel-head"><div><h3>带出物品</h3><p>累计估值 ${dcNumber(data.totalValue)}</p></div></div>${data.data?.length ? `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>物品</th><th>品质</th><th>数量</th><th>最高单价</th><th>累计价值</th></tr></thead><tbody>${data.data.map((item) => `<tr><td data-label="物品"><strong>${escapeHtml(item.itemName || item.itemId || "未知物品")}</strong></td><td data-label="品质"><span class="dc-grade grade-${Number(item.grade || 0)}">${dcNumber(item.grade)} 级</span></td><td data-label="数量">${dcNumber(item.quantity)}</td><td data-label="最高单价" class="dc-number">${dcNumber(item.maxUnitPrice)}</td><td data-label="累计价值" class="dc-number positive">${dcNumber(item.totalValue)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="dc-empty compact"><strong>暂无物品数据</strong><p>导入包含 items 的战绩后会显示汇总。</p></div>`}</section>`;
     bindDcFilters(loadDcItems);
   }).catch(dcError);
 }
@@ -1737,7 +1775,7 @@ function openDcBattle(battleId) {
     const b = data.battle;
     content.innerHTML = `<div class="dc-detail-hero"><div><span>${escapeHtml(dcDate(b.eventTime))}</span><h4>${escapeHtml(b.mapName || "未知地图")}</h4><p>${escapeHtml(b.roleName || "未知干员")} · ${escapeHtml(dcDuration(b.durationSeconds))}</p></div>${dcResult(b.gameResult)}</div>
       <div class="dc-detail-metrics">${dcMetric("玩家击杀", dcNumber(b.playerKillCount), `${dcNumber(b.assistCount)} 次助攻`)}${dcMetric("带出价值", dcNumber(b.gainedValue), "本局获得物资")}${dcMetric("净收益", `${Number(b.profitLoss)>=0?"+":""}${dcNumber(b.profitLoss)}`, `战备 ${dcNumber(b.equipmentValue)}`, Number(b.profitLoss)>=0?"positive":"negative")}</div>
-      <section><h4>队伍表现</h4>${data.players?.length ? `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>玩家</th><th>干员</th><th>击杀</th><th>助攻</th><th>收益</th></tr></thead><tbody>${data.players.map((p) => `<tr><td><strong>${escapeHtml(p.playerName || p.gamePlayerId || "未知玩家")}</strong>${p.self ? `<small>本人</small>` : ""}</td><td>${escapeHtml(p.roleName || "—")}</td><td>${dcNumber(p.playerKillCount)}</td><td>${dcNumber(p.assistCount)}</td><td class="dc-number">${dcNumber(p.profitLoss)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="dc-help">该对局没有队伍明细。</p>`}</section>
+      <section><h4>队伍表现</h4>${data.players?.length ? `<div class="dc-table-wrap"><table class="dc-table"><thead><tr><th>玩家</th><th>干员</th><th>击杀</th><th>助攻</th><th>收益</th></tr></thead><tbody>${data.players.map((p) => `<tr><td data-label="玩家"><strong>${escapeHtml(p.playerName || p.gamePlayerId || "未知玩家")}</strong>${p.self ? `<small>本人</small>` : ""}</td><td data-label="干员">${escapeHtml(p.roleName || "—")}</td><td data-label="击杀">${dcNumber(p.playerKillCount)}</td><td data-label="助攻">${dcNumber(p.assistCount)}</td><td data-label="收益" class="dc-number">${dcNumber(p.profitLoss)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="dc-help">该对局没有队伍明细。</p>`}</section>
       <section><h4>带出物品</h4>${data.items?.length ? `<div class="dc-item-grid">${data.items.map((item) => `<article><div><strong>${escapeHtml(item.itemName || "未知物品")}</strong><span>${dcNumber(item.quantity)} 件 · ${dcNumber(item.unitPrice)} / 件</span></div><b>${dcNumber(item.totalValue)}</b></article>`).join("")}</div>` : `<p class="dc-help">该对局没有物品明细。</p>`}</section>`;
   }).catch((error) => { content.innerHTML = `<div class="dc-empty"><strong>详情读取失败</strong><p>${escapeHtml(error.message)}</p></div>`; });
 }
@@ -1780,8 +1818,9 @@ function loginPage() {
         ${notice ? `<div class="auth-notice">${escapeHtml(notice)}</div>` : ""}
         <div class="auth-tabs">
           <button class="chip-button active" type="button" data-auth-mode="login">登录</button>
-          <button class="chip-button" type="button" data-auth-mode="register">注册</button>
+          <button id="registration-tab" class="chip-button" type="button" data-auth-mode="register" aria-describedby="registration-status" disabled>注册</button>
         </div>
+        <div id="registration-status" class="registration-status" role="status" aria-live="polite">正在读取注册状态…</div>
         <form id="auth-form">
           <div class="field"><label for="auth-username">账号</label><input id="auth-username" name="username" placeholder="3–64 位字母、数字或中文" autocomplete="username" minlength="3" maxlength="64" required /></div>
           <div class="field"><label for="auth-password">密码</label><div class="password-field"><input id="auth-password" name="password" type="password" placeholder="输入密码" autocomplete="current-password" maxlength="128" required /><button id="password-toggle" class="password-toggle" type="button" aria-label="显示密码" aria-pressed="false">显示</button></div><small id="password-help" class="field-help">请输入你的账号密码。</small></div>
@@ -1835,11 +1874,12 @@ function bindPageEvents(route) {
   if (route === "/gun-modifier") bindModifier();
   if (route === "/knowledge") bindKnowledge();
   if (route === "/news") bindNews();
-  if (route === "/admin" && state.user?.role === "ADMIN") bindAdmin();
+  if (route === "/admin" && isAdminUser()) bindAdmin();
   if (route === "/login") bindAuth();
 }
 
 function bindChat() {
+  bindMobileChatPanels();
   const archiveToggle = document.querySelector("#archive-toggle-button");
   archiveToggle.textContent = state.showArchivedSessions ? "查看当前对话" : "查看归档";
   archiveToggle.addEventListener("click", () => {
@@ -2019,6 +2059,19 @@ function bindAuth() {
   const password = document.querySelector("#auth-password");
   const passwordToggle = document.querySelector("#password-toggle");
   const passwordHelp = document.querySelector("#password-help");
+  const registrationTab = document.querySelector("#registration-tab");
+  const registrationStatus = document.querySelector("#registration-status");
+  api("/api/auth/registration")
+    .then((result) => {
+      const enabled = Boolean(result?.enabled);
+      registrationTab.disabled = !enabled;
+      registrationStatus.textContent = enabled ? "管理员已开放新用户注册。" : "管理员当前未开放新用户注册。";
+      registrationStatus.classList.toggle("enabled", enabled);
+    })
+    .catch(() => {
+      registrationTab.disabled = true;
+      registrationStatus.textContent = "暂时无法确认注册状态，请稍后重试。";
+    });
   passwordToggle.addEventListener("click", () => {
     const visible = password.type === "text";
     password.type = visible ? "password" : "text";
@@ -2073,14 +2126,47 @@ function playButtonRipple(button, clientX, clientY) {
   button.classList.add("is-rippling");
 }
 
+function syncMobileChatPanels() {
+  if (!mobileChatMediaQuery) return;
+  document.querySelectorAll("[data-mobile-chat-panel]").forEach((panel) => {
+    const trigger = panel.querySelector(".mobile-chat-panel-toggle");
+    if (!trigger) return;
+    if (mobileChatMediaQuery.matches) {
+      panel.classList.remove("is-expanded");
+      trigger.setAttribute("aria-expanded", "false");
+    } else {
+      panel.classList.remove("is-expanded");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+  });
+}
+
+function bindMobileChatPanels() {
+  if (!mobileChatMediaQuery) {
+    mobileChatMediaQuery = window.matchMedia("(max-width: 720px) and (orientation: portrait)");
+    mobileChatMediaQuery.addEventListener?.("change", syncMobileChatPanels);
+  }
+  syncMobileChatPanels();
+  document.querySelectorAll("[data-mobile-chat-panel]").forEach((panel) => {
+    const trigger = panel.querySelector(".mobile-chat-panel-toggle");
+    trigger?.addEventListener("click", () => {
+      if (!mobileChatMediaQuery.matches) return;
+      const expanded = panel.classList.toggle("is-expanded");
+      trigger.setAttribute("aria-expanded", String(expanded));
+    });
+  });
+}
+
+const BUTTON_MOTION_SELECTOR = "button, a.primary-button, a.ghost-button, a.chip-button, a.tool-button";
+
 function bindButtonMotion() {
   document.addEventListener("pointerdown", (event) => {
-    const button = event.target.closest("button");
+    const button = event.target.closest(BUTTON_MOTION_SELECTOR);
     if (button) playButtonRipple(button, event.clientX, event.clientY);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
-    const button = event.target.closest("button");
+    const button = event.target.closest(BUTTON_MOTION_SELECTOR);
     if (button && !event.repeat) playButtonRipple(button);
   });
   document.addEventListener("animationend", (event) => {

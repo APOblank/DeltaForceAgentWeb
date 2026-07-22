@@ -66,6 +66,11 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .metric-card { display: grid; gap: 7px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(145deg, var(--surface), #121619); }
 .metric-card span, .metric-card small { color: var(--muted); font-size: 12px; }
 .metric-card strong { font: 700 clamp(27px, 3vw, 38px)/1 Consolas, monospace; letter-spacing: -.04em; }
+.registration-control { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+.registration-control h3 { margin: 9px 0 6px; }
+.registration-control p { margin: 0; color: var(--muted); line-height: 1.6; }
+.registration-control button { flex: 0 0 auto; min-width: 128px; }
+.registration-control.enabled { border-color: rgba(54, 214, 163, .35); background: rgba(54, 214, 163, .035); }
 .overview-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); gap: 16px; }
 .quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .quick-actions button { display: grid; gap: 6px; min-height: 108px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--surface-2); cursor: pointer; text-align: left; transition: border-color .18s ease, background .18s ease; }
@@ -156,6 +161,11 @@ fieldset legend { padding: 0 8px; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .user-workbench { grid-template-columns: minmax(300px, .8fr) minmax(340px, 1.2fr); }
   .message-card { grid-column: 1 / -1; height: 560px; min-height: 0; }
+}
+
+@media (max-width: 620px) {
+  .registration-control { align-items: stretch; flex-direction: column; }
+  .registration-control button { width: 100%; }
 }
 
 @media (max-width: 900px) {

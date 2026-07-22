@@ -20,7 +20,7 @@
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <neo4j-java-driver.version>6.1.0</neo4j-java-driver.version>
+        <neo4j-java-driver.version>6.2.0</neo4j-java-driver.version>
         <sqlite-jdbc.version>3.50.3.0</sqlite-jdbc.version>
     </properties>
 

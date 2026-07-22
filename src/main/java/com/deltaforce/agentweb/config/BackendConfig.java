@@ -7,6 +7,7 @@ import org.neo4j.driver.Config;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -47,10 +48,20 @@ public class BackendConfig {
     }
 
     @Bean
+    @Primary
     public RestTemplate restTemplate(RestTemplateBuilder builder) {
         return builder
                 .connectTimeout(Duration.ofSeconds(5))
                 .readTimeout(Duration.ofSeconds(120))
+                .requestFactory(SimpleClientHttpRequestFactory.class)
+                .build();
+    }
+
+    @Bean(name = "chatRestTemplate")
+    public RestTemplate chatRestTemplate(RestTemplateBuilder builder) {
+        return builder
+                .connectTimeout(Duration.ofSeconds(5))
+                .readTimeout(Duration.ofSeconds(130))
                 .requestFactory(SimpleClientHttpRequestFactory.class)
                 .build();
     }

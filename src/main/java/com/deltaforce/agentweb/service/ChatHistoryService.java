@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -155,6 +156,45 @@ public class ChatHistoryService {
                                 "userId", userId,
                                 "sessionId", sessionId,
                                 "messageId", messageId,
+                                "role", role,
+                                "content", content,
+                                "hasReact", hasReact,
+                                "reactEvents", reactEventsJson,
+                                "now", now
+                        )
+                ).consume();
+                return null;
+            });
+        }
+        return messageId;
+    }
+
+    public String appendMessageOnce(String userId, String sessionId, String requestMessageId,
+                                    String role, String content, Object reactEvents) {
+        if (!StringUtils.hasText(requestMessageId)) {
+            return appendMessage(userId, sessionId, role, content, reactEvents);
+        }
+        String messageId = UUID.nameUUIDFromBytes(
+                (userId + "\n" + sessionId + "\n" + requestMessageId + "\n" + role)
+                        .getBytes(StandardCharsets.UTF_8)
+        ).toString();
+        String now = Instant.now().toString();
+        String reactEventsJson = toJson(reactEvents);
+        boolean hasReact = StringUtils.hasText(reactEventsJson) && !"[]".equals(reactEventsJson);
+        try (Session session = session()) {
+            session.executeWrite(tx -> {
+                tx.run(
+                        "MATCH (:AgentUser {userId: $userId})-[:OWNS_SESSION]->(s:AgentChatSession {sessionId: $sessionId}) " +
+                                "MERGE (m:AgentChatMessage {messageId: $messageId}) " +
+                                "ON CREATE SET m.role = $role, m.content = $content, m.createdAt = $now, " +
+                                "m.hasReact = $hasReact, m.reactEvents = $reactEvents, m.requestMessageId = $requestMessageId " +
+                                "MERGE (s)-[:HAS_MESSAGE]->(m) " +
+                                "SET s.updatedAt = CASE WHEN s.updatedAt IS NULL OR s.updatedAt < $now THEN $now ELSE s.updatedAt END",
+                        Values.parameters(
+                                "userId", userId,
+                                "sessionId", sessionId,
+                                "messageId", messageId,
+                                "requestMessageId", requestMessageId,
                                 "role", role,
                                 "content", content,
                                 "hasReact", hasReact,

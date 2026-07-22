@@ -1009,7 +1009,13 @@ async function streamChat(pending, messageId, conversationMode) {
     }),
   });
   if (!response.ok || !response.body) {
-    throw new Error(response.statusText || "stream failed");
+    let errorBody = null;
+    try { errorBody = await response.json(); } catch { errorBody = null; }
+    const retryAfter = response.headers.get("Retry-After");
+    const requestId = response.headers.get("X-Request-ID") || errorBody?.requestId;
+    const retryText = retryAfter ? `，请在 ${retryAfter} 秒后重试` : "";
+    const requestText = requestId ? `（请求编号 ${requestId}）` : "";
+    throw new Error(`${errorBody?.message || response.statusText || "智能体请求失败"}${retryText}${requestText}`);
   }
 
   const reader = response.body.getReader();
@@ -1043,6 +1049,11 @@ async function streamChat(pending, messageId, conversationMode) {
       }
 
       const delta = chunk.choices?.[0]?.delta || {};
+      if (delta.error) {
+        const retryText = chunk.retry_after ? `，请在 ${chunk.retry_after} 秒后重试` : "";
+        const requestText = chunk.request_id ? `（请求编号 ${chunk.request_id}）` : "";
+        throw new Error(`${delta.error.message || "智能体请求失败"}${retryText}${requestText}`);
+      }
       if (delta.session) {
         applyPendingConversationMetadata(pending, delta.session);
       }

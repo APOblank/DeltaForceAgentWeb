@@ -43,6 +43,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.UUID;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import com.deltaforce.agentweb.config.CorrelationIdFilter;
 import com.deltaforce.agentweb.config.JwtAuthenticationInterceptor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
@@ -201,37 +203,45 @@ public class ApiController {
         String messageId = StringUtils.hasText(request.getMessageId()) ? request.getMessageId() : UUID.randomUUID().toString();
         String userId = requireUser(httpRequest);
         sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
-        chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
-        ChatResponse response = chatProxyService.chat(request.getMessage(), request.getDebug(), request.getReactEvents(), userId, sessionId, messageId, request.getConversationMode());
+        chatHistoryService.appendMessageOnce(userId, sessionId, messageId, "user", request.getMessage(), null);
+        ChatResponse response = chatProxyService.chat(request.getMessage(), request.getDebug(), request.getReactEvents(),
+                userId, sessionId, messageId, request.getConversationMode(), requestId(httpRequest));
         response.setSessionId(StringUtils.hasText(sessionId) ? sessionId : response.getSessionId());
         if (StringUtils.hasText(userId) && StringUtils.hasText(sessionId)) {
-            String assistantMessageId = chatHistoryService.appendMessage(userId, sessionId, "assistant", response.getAnswer(), response.getReactEvents());
+            String assistantMessageId = chatHistoryService.appendMessageOnce(userId, sessionId, messageId,
+                    "assistant", response.getAnswer(), response.getReactEvents());
             response.setMessageId(assistantMessageId);
         }
         return response;
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(@Valid @RequestBody ChatRequest request, HttpServletRequest httpRequest) {
-        SseEmitter emitter = new SseEmitter(120_000L);
+    public SseEmitter chatStream(@Valid @RequestBody ChatRequest request, HttpServletRequest httpRequest,
+                                 HttpServletResponse httpResponse) {
+        httpResponse.setHeader("Cache-Control", "no-cache, no-transform");
+        httpResponse.setHeader("X-Accel-Buffering", "no");
+        SseEmitter emitter = new SseEmitter(135_000L);
         emitter.onTimeout(emitter::complete);
         String sessionId = null;
         String messageId = StringUtils.hasText(request.getMessageId()) ? request.getMessageId() : UUID.randomUUID().toString();
         String userId = requireUser(httpRequest);
         sessionId = chatHistoryService.ensureSession(userId, request.getSessionId(), request.getMessage());
-        chatHistoryService.appendMessage(userId, sessionId, "user", request.getMessage());
+        chatHistoryService.appendMessageOnce(userId, sessionId, messageId, "user", request.getMessage(), null);
 
         final String finalSessionId = sessionId;
         final String finalUserId = userId;
+        final String finalRequestId = requestId(httpRequest);
         try {
             chatStreamExecutor.execute(() -> {
                 try {
                 Map<String, Object> sessionEvent = new HashMap<String, Object>();
                 sessionEvent.put("sessionId", finalSessionId);
                 emitter.send(SseEmitter.event().name("session").data(objectMapper.writeValueAsString(sessionEvent)));
-                chatProxyService.streamChat(request.getMessage(), request.getDebug(), request.getReactEvents(), finalUserId, finalSessionId, messageId, request.getConversationMode(), emitter, (answer, reactEvents) -> {
+                chatProxyService.streamChat(request.getMessage(), request.getDebug(), request.getReactEvents(),
+                        finalUserId, finalSessionId, messageId, request.getConversationMode(), finalRequestId, emitter, (answer, reactEvents) -> {
                     if (StringUtils.hasText(finalUserId) && StringUtils.hasText(finalSessionId)) {
-                        return chatHistoryService.appendMessage(finalUserId, finalSessionId, "assistant", answer, reactEvents);
+                        return chatHistoryService.appendMessageOnce(finalUserId, finalSessionId, messageId,
+                                "assistant", answer, reactEvents);
                     }
                     return "";
                 });
@@ -308,6 +318,11 @@ public class ApiController {
     private String optionalUser(HttpServletRequest request) {
         Object userId = request.getAttribute(JwtAuthenticationInterceptor.AUTHENTICATED_USER_ID);
         return userId == null ? "" : String.valueOf(userId);
+    }
+
+    private String requestId(HttpServletRequest request) {
+        Object value = request.getAttribute(CorrelationIdFilter.HEADER);
+        return value == null ? "" : String.valueOf(value);
     }
 
     private String requireUser(HttpServletRequest request) {

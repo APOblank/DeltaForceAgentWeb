@@ -1,12 +1,14 @@
 package com.deltaforce.agentweb.controller;
 
 import com.deltaforce.agentweb.config.CorrelationIdFilter;
+import com.deltaforce.agentweb.service.AgentApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -43,6 +45,24 @@ public class GlobalExceptionHandler {
         HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
         if (status == null) status = HttpStatus.INTERNAL_SERVER_ERROR;
         return error(status, status.name(), safeMessage(ex.getReason(), status.getReasonPhrase()), request);
+    }
+
+    @ExceptionHandler(AgentApiException.class)
+    public ResponseEntity<Map<String, Object>> agentApi(AgentApiException ex, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatus());
+        if (status == null) status = HttpStatus.BAD_GATEWAY;
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", status.value());
+        body.put("code", ex.getCode());
+        body.put("message", safeMessage(ex.getMessage(), "智能体服务请求失败"));
+        body.put("path", request.getRequestURI());
+        body.put("requestId", StringUtils.hasText(ex.getRequestId()) ? ex.getRequestId() : requestId(request));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
+        if (ex.getRetryAfterSeconds() != null) {
+            response.header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()));
+        }
+        return response.body(body);
     }
 
     @ExceptionHandler(Exception.class)

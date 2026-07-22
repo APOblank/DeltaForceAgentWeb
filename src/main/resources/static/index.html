@@ -3,12 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="面向三角洲行动玩家的智能助手，提供 AI 对话、市场数据、改枪方案、知识图谱与个人战绩分析。" />
+    <meta name="theme-color" content="#111111" />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:title" content="三角洲行动智能体" />
+    <meta property="og:description" content="AI 对话、市场数据、改枪方案、知识图谱与个人战绩分析。" />
+    <meta property="og:type" content="website" />
     <title>三角洲行动智能体</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./site.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#app-view">跳到主要内容</a>
     <div class="app-shell">
-      <aside class="sidebar" id="primary-sidebar">
+      <aside class="sidebar" id="primary-sidebar" aria-label="站点导航">
         <a class="brand" href="#/">
           <span class="brand-mark">Δ</span>
           <span>
@@ -33,15 +42,15 @@
 
         <nav class="nav-list" aria-label="主导航">
           <a class="nav-item" href="#/" data-route="/">
-            <span class="icon">⌂</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5 10v10h14V10"></path><path d="M9 20v-6h6v6"></path></svg></span>
             <span>首页</span>
           </a>
           <a class="nav-item" href="#/chat" data-route="/chat">
-            <span class="icon">●</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 3V5Z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg></span>
             <span>智能对话</span>
           </a>
           <a class="nav-item" href="#/market" data-route="/market">
-            <span class="icon">↗</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19 10 13l4 3 6-9"></path><path d="M15 7h5v5"></path></svg></span>
             <span>市场数据</span>
           </a>
           <a class="nav-item" href="#/data-center" data-route="/data-center">
@@ -51,23 +60,23 @@
             <span>数据中心</span>
           </a>
           <a class="nav-item" href="#/gun-modifier" data-route="/gun-modifier">
-            <span class="icon">⌁</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 16 16 4l4 4L8 20H4v-4Z"></path><path d="m13 7 4 4"></path></svg></span>
             <span>改枪台</span>
           </a>
           <a class="nav-item" href="#/knowledge" data-route="/knowledge">
-            <span class="icon">◎</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="6" r="3"></circle><circle cx="18" cy="18" r="3"></circle><path d="m9 11 6-4"></path><path d="m9 13 6 4"></path></svg></span>
             <span>图谱查询</span>
           </a>
           <a class="nav-item" href="#/readiness" data-route="/readiness">
-            <span class="icon">▣</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg></span>
             <span>卡战备</span>
           </a>
           <a class="nav-item" href="#/news" data-route="/news">
-            <span class="icon">◫</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path></svg></span>
             <span>今日资讯</span>
           </a>
           <a class="nav-item" href="/admin.html" data-admin-link hidden>
-            <span class="icon">▦</span>
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"></rect><rect x="14" y="4" width="6" height="6"></rect><rect x="4" y="14" width="6" height="6"></rect><rect x="14" y="14" width="6" height="6"></rect></svg></span>
             <span>管理后台</span>
           </a>
         </nav>
@@ -75,19 +84,17 @@
         <div class="sidebar-panel">
           <div id="sidebar-user-area"></div>
           <div class="panel-label">系统状态</div>
-          <div class="status-row">
-            <span class="pulse"></span>
-            <span>Spring Boot / Neo4j</span>
-          </div>
-          <div class="mini-meter">
-            <span style="width: 82%"></span>
+          <div class="status-row" id="system-status" aria-live="polite">
+            <span class="pulse pending"></span>
+            <span>正在检查服务</span>
           </div>
         </div>
       </aside>
 
+      <button class="sidebar-backdrop" type="button" aria-label="关闭菜单" tabindex="-1"></button>
       <main class="main-area">
         <header class="topbar">
-          <button class="menu-button" type="button" aria-label="展开菜单">☰</button>
+          <button class="menu-button" type="button" aria-label="展开菜单" aria-controls="primary-sidebar" aria-expanded="false">☰</button>
           <div>
             <div class="eyebrow">DELTA FORCE AI</div>
             <h1 id="page-title">三角洲行动智能体</h1>
@@ -95,7 +102,7 @@
           <div class="top-actions" id="top-actions"></div>
         </header>
 
-        <section id="app-view" class="view"></section>
+        <section id="app-view" class="view" tabindex="-1"></section>
       </main>
     </div>
 

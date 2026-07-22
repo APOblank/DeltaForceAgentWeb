@@ -1,0 +1,10 @@
+{
+  "name": "三角洲行动智能体",
+  "short_name": "三角洲智能体",
+  "description": "AI 对话、市场数据、改枪方案、知识图谱与个人战绩分析。",
+  "start_url": "/#/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111111",
+  "icons": []
+}

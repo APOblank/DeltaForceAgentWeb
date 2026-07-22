@@ -5,15 +5,24 @@ const sidebar = document.querySelector(".sidebar");
 const menuButton = document.querySelector(".menu-button");
 const sidebarCollapseButton = document.querySelector("#sidebar-collapse-button");
 const topActions = document.querySelector("#top-actions");
+const sidebarBackdrop = document.querySelector(".sidebar-backdrop");
 const API_BASE = "";
 
+function readSessionJson(key) {
+  try { return JSON.parse(sessionStorage.getItem(key) || "null"); }
+  catch { sessionStorage.removeItem(key); return null; }
+}
+
+// Older versions persisted bearer tokens indefinitely. Remove that legacy copy.
+localStorage.removeItem("delta-force-user");
+
 const state = {
-  user: JSON.parse(localStorage.getItem("delta-force-user") || "null"),
-  activeSessionId: localStorage.getItem("delta-force-session") || "",
+  user: readSessionJson("delta-force-user"),
+  activeSessionId: sessionStorage.getItem("delta-force-session") || "",
   sessions: [],
   showArchivedSessions: false,
   githubUrl: "",
-  locale: localStorage.getItem("delta-force-locale") || "zh-CN",
+  locale: "zh-CN",
   theme: localStorage.getItem("delta-force-theme") || "light",
   marketItems: [],
   marketPage: 1,
@@ -88,13 +97,21 @@ function api(path, options = {}) {
     },
   }).then(async (response) => {
     const text = await response.text();
-    const data = text ? JSON.parse(text) : null;
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch { data = { message: "服务返回了无法识别的响应" }; }
+    }
     if (!response.ok) {
       if (response.status === 401 && state.user) {
         setUser(null);
         location.hash = "#/login";
       }
-      throw new Error(data?.message || data?.error || response.statusText);
+      const retry = response.headers.get("Retry-After");
+      const requestId = response.headers.get("X-Request-ID") || data?.requestId;
+      const suffix = requestId ? `（请求编号 ${requestId}）` : "";
+      const retryMessage = response.status === 429 && retry ? `，请在 ${retry} 秒后重试` : "";
+      throw new Error(`${data?.message || data?.error || response.statusText}${retryMessage}${suffix}`);
     }
     return data;
   });
@@ -127,7 +144,7 @@ function itemImageMarkup(item) {
   if (!["attachment", "attachments", "firearm", "firearms"].includes(type)) return "";
   const name = escapeHtml(item.name || "物品");
   const src = escapeHtml(itemImageUrl(item));
-  return `<span class="attachment-thumbnail"><img src="${src}" alt="${name}" loading="lazy" decoding="async" draggable="false" onerror="this.parentElement.remove()" /></span>`;
+  return `<span class="attachment-thumbnail"><img src="${src}" alt="${name}" loading="lazy" decoding="async" draggable="false" /></span>`;
 }
 
 function attachmentImageMarkup(item) {
@@ -165,23 +182,26 @@ function dailyLoadoutLineMarkup(line, attachments, isFirearmLine = false) {
 
 function setActive(route) {
   document.querySelectorAll(".nav-item").forEach((item) => {
-    item.classList.toggle("active", item.dataset.route === route);
+    const active = item.dataset.route === route;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
   });
   title.textContent = pageTitle(route);
+  document.title = route === "/" ? "三角洲行动智能体" : `${pageTitle(route)} · 三角洲行动智能体`;
 }
 
 function pageTitle(route) {
-  const titles = state.locale === "en" ? pageTitlesEn : pageTitles;
-  return titles[route] || titles["/"];
+  return pageTitles[route] || pageTitles["/"];
 }
 
 function setUser(user) {
   state.user = user;
   if (user) {
-    localStorage.setItem("delta-force-user", JSON.stringify(user));
+    sessionStorage.setItem("delta-force-user", JSON.stringify(user));
   } else {
-    localStorage.removeItem("delta-force-user");
-    localStorage.removeItem("delta-force-session");
+    sessionStorage.removeItem("delta-force-user");
+    sessionStorage.removeItem("delta-force-session");
     state.activeSessionId = "";
     state.sessions = [];
   }
@@ -192,7 +212,7 @@ function renderTopActions() {
   renderSidebarUser();
   syncSidebarLabels();
   const adminNav = document.querySelector('[data-admin-link]');
-  if (adminNav) adminNav.hidden = state.user?.username !== "admin";
+  if (adminNav) adminNav.hidden = state.user?.role !== "ADMIN";
   if (!state.user) {
     topActions.innerHTML = topToolsMarkup();
     bindTopTools();
@@ -217,22 +237,14 @@ function topToolsMarkup() {
   const github = githubUrl
     ? `<a class="header-github-link" href="${escapeHtml(githubUrl)}" target="_blank" rel="noopener noreferrer"><img src="/github.svg" alt="GitHub" width="16" height="16" />GitHub</a>`
     : `<span class="header-github-link is-disabled" title="${state.locale === "en" ? "Configure GitHub URL in Admin" : "请在管理后台配置 GitHub 链接"}"><img src="/github.svg" alt="GitHub" width="16" height="16" />GitHub</span>`;
-  const languageTitle = state.locale === "en" ? "切换到中文" : "Switch to English";
   const themeTitle = state.theme === "dark" ? "Light Mode" : "Dark Mode";
-  const languageIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 6 6"></path><path d="m4 14 6-6 2-3"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="m22 22-5-10-5 10"></path><path d="M14 18h6"></path></svg>`;
   const themeIcon = state.theme === "dark"
     ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6.8 6.8 0 0 0 9 9A9 9 0 1 1 12 3Z"></path></svg>`
     : `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>`;
-  return `<div class="top-tool-group" role="toolbar" aria-label="${state.locale === "en" ? "Page tools" : "页面工具"}">${github}<span class="top-tools-divider" aria-hidden="true"></span><button id="locale-toggle" class="top-icon-button" type="button" title="${languageTitle}" aria-label="${languageTitle}"><span class="top-icon-button-content">${languageIcon}</span><span class="top-icon-button-hover" aria-hidden="true"></span></button><button id="theme-toggle" class="top-icon-button" type="button" title="${themeTitle}" aria-label="${themeTitle}"><span class="top-icon-button-content">${themeIcon}</span><span class="top-icon-button-hover" aria-hidden="true"></span></button></div>`;
+  return `<div class="top-tool-group" role="toolbar" aria-label="页面工具">${github}<span class="top-tools-divider" aria-hidden="true"></span><button id="theme-toggle" class="top-icon-button" type="button" title="${themeTitle}" aria-label="${themeTitle}"><span class="top-icon-button-content">${themeIcon}</span><span class="top-icon-button-hover" aria-hidden="true"></span></button></div>`;
 }
 
 function bindTopTools() {
-  document.querySelector("#locale-toggle")?.addEventListener("click", () => {
-    state.locale = state.locale === "en" ? "zh-CN" : "en";
-    localStorage.setItem("delta-force-locale", state.locale);
-    applyLocale();
-    render();
-  });
   document.querySelector("#theme-toggle")?.addEventListener("click", () => {
     state.theme = state.theme === "dark" ? "light" : "dark";
     localStorage.setItem("delta-force-theme", state.theme);
@@ -247,16 +259,14 @@ function applyTheme() {
 }
 
 function applyLocale() {
-  document.documentElement.lang = state.locale === "en" ? "en" : "zh-CN";
-  const labels = state.locale === "en"
-    ? { "/": "Home", "/chat": "AI Chat", "/market": "Market", "/data-center": "Data Center", "/gun-modifier": "Gun Bench", "/knowledge": "Knowledge", "/readiness": "Readiness", "/news": "Daily Intel", "/admin": "Admin" }
-    : { "/": "首页", "/chat": "智能对话", "/market": "市场数据", "/data-center": "数据中心", "/gun-modifier": "改枪台", "/knowledge": "图谱查询", "/readiness": "卡战备", "/news": "今日资讯", "/admin": "管理后台" };
+  document.documentElement.lang = "zh-CN";
+  const labels = { "/": "首页", "/chat": "智能对话", "/market": "市场数据", "/data-center": "数据中心", "/gun-modifier": "改枪台", "/knowledge": "图谱查询", "/readiness": "卡战备", "/news": "今日资讯", "/admin": "管理后台" };
   document.querySelectorAll(".nav-item").forEach((item) => {
     const text = item.querySelectorAll("span")[1];
     if (text && labels[item.dataset.route]) text.textContent = labels[item.dataset.route];
   });
   const brand = document.querySelector(".brand strong");
-  if (brand) brand.textContent = state.locale === "en" ? "Delta Force Agent" : "三角洲行动智能体";
+  if (brand) brand.textContent = "三角洲行动智能体";
   syncSidebarLabels();
   applySidebarState();
 }
@@ -389,7 +399,7 @@ function homePage() {
     <div class="grid module-grid">
       <a class="card" href="#/chat"><span class="badge">CHAT</span><h3>智能对话</h3><p>登录后会话会保存到 Neo4j，可像 ChatGPT 一样切换历史记录。</p></a>
       <a class="card" href="#/market"><span class="badge blue">MARKET</span><h3>市场数据查看</h3><p>通过实时数据 API 获取物品行情，展示当前价格、战备价与均价变化。</p></a>
-      <a class="card" href="#/knowledge"><span class="badge amber">GRAPH</span><h3>v知识图谱查询</h3><p>在图谱数据库中搜索枪械、配件、属性和知识节点。</p></a>
+      <a class="card" href="#/knowledge"><span class="badge amber">GRAPH</span><h3>知识图谱查询</h3><p>在图谱数据库中搜索枪械、配件、属性和知识节点。</p></a>
     </div>
   `;
 }
@@ -500,7 +510,7 @@ function setChatSessionArchived(sessionId, archived) {
       if (!result?.archived) throw new Error("操作失败。");
       if (archived && state.activeSessionId === sessionId) {
         state.activeSessionId = "";
-        localStorage.removeItem("delta-force-session");
+        sessionStorage.removeItem("delta-force-session");
         document.querySelector("#messages").innerHTML = defaultChatMessages();
       }
       return loadSessions();
@@ -516,7 +526,7 @@ function deleteChatSession(sessionId) {
       state.sessions = state.sessions.filter((session) => session.sessionId !== sessionId);
       if (state.activeSessionId === sessionId) {
         state.activeSessionId = "";
-        localStorage.removeItem("delta-force-session");
+        sessionStorage.removeItem("delta-force-session");
         state.reactEvents = [];
         state.selectedReactEventId = "";
         state.selectedReactMessageId = "";
@@ -546,7 +556,7 @@ function loadSessions() {
 function loadSessionMessages(sessionId) {
   if (!state.user || !sessionId) return;
   state.activeSessionId = sessionId;
-  localStorage.setItem("delta-force-session", sessionId);
+  sessionStorage.setItem("delta-force-session", sessionId);
   state.conversation = { activeTaskId: "", taskStatus: "" };
   renderConversationStatus();
   renderSessionList();
@@ -653,7 +663,7 @@ function attachPendingSession(pending, sessionId) {
   state.pendingChats[pending.key] = pending;
   if (wasVisible) {
     state.activeSessionId = pending.sessionId;
-    localStorage.setItem("delta-force-session", pending.sessionId);
+    sessionStorage.setItem("delta-force-session", pending.sessionId);
     renderSessionList();
   }
   loadSessions();
@@ -735,7 +745,7 @@ function thinkingMarkup(events) {
 
 function gunModCtaMarkup(messageId, events) {
   if (!messageId || !isGunModHandoff(events) || !hasFinalAnswer(events)) return "";
-  const publish = state.user?.username === "admin" ? `<button class="message-gunmod-button secondary" type="button" data-publish-gunmod-message="${escapeHtml(messageId)}">发布到推荐</button>` : "";
+  const publish = state.user?.role === "ADMIN" ? `<button class="message-gunmod-button secondary" type="button" data-publish-gunmod-message="${escapeHtml(messageId)}">发布到推荐</button>` : "";
   return `<span class="message-gunmod-actions"><button class="message-gunmod-button" type="button" data-gunmod-message="${escapeHtml(messageId)}">在改枪台中装配</button>${publish}</span>`;
 }
 
@@ -866,7 +876,7 @@ function applyConversationMetadata(value) {
   const sessionId = metadata.session_id || metadata.sessionId;
   if (sessionId) {
     state.activeSessionId = String(sessionId);
-    localStorage.setItem("delta-force-session", state.activeSessionId);
+    sessionStorage.setItem("delta-force-session", state.activeSessionId);
   }
   const conversation = metadata.conversation && typeof metadata.conversation === "object" ? metadata.conversation : metadata;
   const activeTaskId = conversation.active_task_id || conversation.activeTaskId;
@@ -1417,11 +1427,11 @@ function newsPage() {
 }
 
 function adminPage() {
-  if (state.user?.username !== "admin") return `<section class="panel admin-denied"><span class="badge amber">RESTRICTED</span><h2>管理员权限必需</h2><p>请使用用户名为 <code>admin</code> 的账户登录后访问管理后台。</p></section>`;
+  if (state.user?.role !== "ADMIN") return `<section class="panel admin-denied"><span class="badge amber">RESTRICTED</span><h2>管理员权限必需</h2><p>当前账号没有管理权限。</p></section>`;
   return `<div class="admin-layout">
     <section class="panel admin-github"><div class="section-title"><h3>GitHub &#20179;&#24211;&#38142;&#25509;</h3><span id="admin-github-status" class="form-status"></span></div><form id="admin-github-form" class="admin-form"><div class="field"><label for="admin-github-url">GitHub URL</label><input id="admin-github-url" type="url" placeholder="https://github.com/owner/repository" /></div><button class="primary-button" type="submit">&#20445;&#23384;&#38142;&#25509;</button></form></section>
     <section class="panel admin-head"><div><span class="eyebrow">CONTROL CENTER</span><h2>管理员界面</h2><p>管理用户、今日资讯内容与实时市场数据。</p></div><span class="badge">ADMIN</span></section>
-    <section class="panel admin-users"><div class="section-title"><h3>用户信息</h3><button id="admin-users-refresh" class="ghost-button" type="button">刷新列表</button></div><div class="query-table-wrap"><table class="data-table"><thead><tr><th>用户</th><th>显示名</th><th>会话数</th><th>创建时间</th><th>最近登录</th></tr></thead><tbody id="admin-users-body"><tr><td colspan="5">正在读取用户信息…</td></tr></tbody></table></div></section>
+    <section class="panel admin-users"><div class="section-title"><h3>用户信息</h3><button id="admin-users-refresh" class="ghost-button" type="button">刷新列表</button></div><div class="query-table-wrap"><table class="data-table"><thead><tr><th>用户</th><th>角色</th><th>显示名</th><th>会话数</th><th>创建时间</th><th>最近登录</th></tr></thead><tbody id="admin-users-body"><tr><td colspan="6">正在读取用户信息…</td></tr></tbody></table></div></section>
     <div class="admin-grid"><section class="panel admin-content"><div class="section-title"><h3>编辑今日资讯</h3><span id="admin-content-status" class="form-status"></span></div><form id="admin-content-form" class="admin-form"><div class="field"><label>今日地图密码</label><div class="admin-password-fields"><label>AZ3<input id="admin-password-az3" /></label><label>零号大坝<input id="admin-password-zero-dam" /></label><label>航天基地<input id="admin-password-space-city" /></label><label>潮汐监狱<input id="admin-password-tide-prison" /></label><label>巴克什<input id="admin-password-brakkesh" /></label><label>长弓溪谷<input id="admin-password-longbow" /></label></div></div><div class="field"><label for="admin-ai-recommendation">今日 AI 改枪推荐</label><textarea id="admin-ai-recommendation" rows="5"></textarea><small class="field-help">可直接修改；清空后保存即可删除当前推荐。</small></div><div class="field"><label for="admin-ai-prompt">AI 提示词</label><textarea id="admin-ai-prompt" rows="4"></textarea></div><div class="field"><label for="admin-news-content">三角洲今日资讯</label><textarea id="admin-news-content" rows="4"></textarea></div><button class="primary-button" type="submit">保存今日内容</button></form></section>
     <section class="panel admin-refresh"><div class="section-title"><h3>刷新市场数据</h3><span class="badge amber">8010</span></div><p>请求会转发至实时数据服务的 <code>POST /refresh</code>。</p><form id="admin-refresh-form" class="admin-form"><div class="field"><label for="refresh-kind">分类</label><select id="refresh-kind"><option value="">全部分类</option><option value="firearms">枪械</option><option value="attachments">配件</option><option value="armor">护甲</option><option value="helmets">头盔</option><option value="chest_rigs">胸挂</option><option value="backpacks">背包</option></select></div><div class="field"><label for="refresh-pages">测试页数（可选）</label><input id="refresh-pages" type="number" min="1" placeholder="留空即正式刷新" /></div><label class="check-field"><input id="refresh-save-partial" type="checkbox" /> 测试抓取也覆盖正式数据</label><button id="admin-refresh-submit" class="primary-button" type="submit">开始刷新</button><pre id="admin-refresh-result" class="admin-result">尚未执行刷新</pre></form></section></div>
   </div>`;
@@ -1447,7 +1457,7 @@ function bindNews() {
 }
 
 function bindAdmin() {
-  const loadUsers = () => api("/api/admin/users").then((users) => { document.querySelector("#admin-users-body").innerHTML = users.length ? users.map((user) => `<tr><td><strong>${escapeHtml(user.username)}</strong></td><td>${escapeHtml(user.displayName)}</td><td>${user.sessionCount}</td><td>${escapeHtml(formatUpdatedAt(user.createdAt))}</td><td>${escapeHtml(formatUpdatedAt(user.lastLoginAt))}</td></tr>`).join("") : `<tr><td colspan="5">暂无用户</td></tr>`; }).catch((error) => { document.querySelector("#admin-users-body").innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`; });
+  const loadUsers = () => api("/api/admin/users").then((users) => { document.querySelector("#admin-users-body").innerHTML = users.length ? users.map((user) => `<tr><td><strong>${escapeHtml(user.username)}</strong></td><td><span class="badge">${escapeHtml(user.role || "USER")}</span></td><td>${escapeHtml(user.displayName)}</td><td>${user.sessionCount}</td><td>${escapeHtml(formatUpdatedAt(user.createdAt))}</td><td>${escapeHtml(formatUpdatedAt(user.lastLoginAt))}</td></tr>`).join("") : `<tr><td colspan="6">暂无用户</td></tr>`; }).catch((error) => { document.querySelector("#admin-users-body").innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`; });
   const loadContent = () => api("/api/admin/daily-content").then((content) => { document.querySelector("#admin-password-az3").value = content.passwordAz3 || ""; document.querySelector("#admin-password-zero-dam").value = content.passwordZeroDam || ""; document.querySelector("#admin-password-space-city").value = content.passwordSpaceCity || ""; document.querySelector("#admin-password-tide-prison").value = content.passwordTidePrison || ""; document.querySelector("#admin-password-brakkesh").value = content.passwordBrakkesh || ""; document.querySelector("#admin-password-longbow").value = content.passwordLongbow || ""; document.querySelector("#admin-ai-recommendation").value = content.aiRecommendation || ""; document.querySelector("#admin-ai-prompt").value = content.aiPrompt || ""; document.querySelector("#admin-news-content").value = content.newsContent || ""; });
   const loadGithubUrl = () => api("/api/admin/daily-content").then((content) => { document.querySelector("#admin-github-url").value = content.githubUrl || ""; });
   document.querySelector("#admin-users-refresh").addEventListener("click", loadUsers);
@@ -1744,17 +1754,17 @@ function loginPage() {
   sessionStorage.removeItem("auth-notice");
   return `
     <div class="login-view">
-      <div class="login-art">
+      <div class="login-art" aria-hidden="true">
         <div class="eyebrow">PLAYER WORKSPACE</div>
-        <h2>登录后保存你的对话、行情关注和图谱查询上下文。</h2>
-        <p>账号数据、会话列表和消息历史会写入独立 Neo4j 用户库；图谱查询继续使用 sjzdata。</p>
+        <h2>一处管理你的对话、行情与战绩。</h2>
+        <p>登录后即可安全保存会话、查询知识图谱，并同步个人战绩分析。</p>
         <div class="stat-strip">
-          <div class="stat-tile"><strong>用户</strong><span>AgentUser 节点</span></div>
-          <div class="stat-tile"><strong>会话</strong><span>AgentChatSession 节点</span></div>
-          <div class="stat-tile"><strong>消息</strong><span>AgentChatMessage 节点</span></div>
+          <div class="stat-tile"><strong>安全</strong><span>会话级登录凭证</span></div>
+          <div class="stat-tile"><strong>连续</strong><span>保留对话上下文</span></div>
+          <div class="stat-tile"><strong>专属</strong><span>隔离个人数据</span></div>
         </div>
       </div>
-      <section class="login-box">
+      <section class="login-box" aria-labelledby="auth-title">
         <h2 id="auth-title">登录</h2>
         ${notice ? `<div class="auth-notice">${escapeHtml(notice)}</div>` : ""}
         <div class="auth-tabs">
@@ -1762,10 +1772,10 @@ function loginPage() {
           <button class="chip-button" type="button" data-auth-mode="register">注册</button>
         </div>
         <form id="auth-form">
-          <div class="field"><label>账号</label><input id="auth-username" placeholder="输入用户名" autocomplete="username" /></div>
-          <div class="field"><label>密码</label><input id="auth-password" type="password" placeholder="输入密码" autocomplete="current-password" /></div>
+          <div class="field"><label for="auth-username">账号</label><input id="auth-username" name="username" placeholder="3–64 位字母、数字或中文" autocomplete="username" minlength="3" maxlength="64" required /></div>
+          <div class="field"><label for="auth-password">密码</label><div class="password-field"><input id="auth-password" name="password" type="password" placeholder="输入密码" autocomplete="current-password" maxlength="128" required /><button id="password-toggle" class="password-toggle" type="button" aria-label="显示密码" aria-pressed="false">显示</button></div><small id="password-help" class="field-help">请输入你的账号密码。</small></div>
           <button class="primary-button" type="submit" id="auth-submit">登录</button>
-          <div class="form-status" id="auth-status"></div>
+          <div class="form-status" id="auth-status" role="status" aria-live="polite"></div>
         </form>
       </section>
     </div>
@@ -1801,7 +1811,9 @@ function render() {
   view.innerHTML = pages[normalized]();
   view.classList.toggle("home-view", normalized === "/");
   bindPageEvents(normalized);
-  sidebar.classList.remove("open");
+  const drawerWasOpen = sidebar.classList.contains("open");
+  closeSidebar();
+  if (drawerWasOpen) view.focus({ preventScroll: true });
 }
 
 function bindPageEvents(route) {
@@ -1812,7 +1824,7 @@ function bindPageEvents(route) {
   if (route === "/gun-modifier") bindModifier();
   if (route === "/knowledge") bindKnowledge();
   if (route === "/news") bindNews();
-  if (route === "/admin" && state.user?.username === "admin") bindAdmin();
+  if (route === "/admin" && state.user?.role === "ADMIN") bindAdmin();
   if (route === "/login") bindAuth();
 }
 
@@ -1832,7 +1844,7 @@ function bindChat() {
     state.messageReactEvents = {};
     state.conversation = { activeTaskId: "", taskStatus: "" };
     state.nextConversationMode = "new";
-    localStorage.removeItem("delta-force-session");
+    sessionStorage.removeItem("delta-force-session");
     document.querySelector("#messages").innerHTML = defaultChatMessages();
     renderReactTimeline();
     renderConversationStatus();
@@ -1993,12 +2005,26 @@ function bindKnowledge() {
 
 function bindAuth() {
   let mode = "login";
+  const password = document.querySelector("#auth-password");
+  const passwordToggle = document.querySelector("#password-toggle");
+  const passwordHelp = document.querySelector("#password-help");
+  passwordToggle.addEventListener("click", () => {
+    const visible = password.type === "text";
+    password.type = visible ? "password" : "text";
+    passwordToggle.textContent = visible ? "显示" : "隐藏";
+    passwordToggle.setAttribute("aria-label", visible ? "显示密码" : "隐藏密码");
+    passwordToggle.setAttribute("aria-pressed", String(!visible));
+  });
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       mode = button.dataset.authMode;
       document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.toggle("active", item === button));
       document.querySelector("#auth-title").textContent = mode === "login" ? "登录" : "注册";
       document.querySelector("#auth-submit").textContent = mode === "login" ? "登录" : "创建账号";
+      password.autocomplete = mode === "login" ? "current-password" : "new-password";
+      password.minLength = mode === "login" ? 0 : 10;
+      password.placeholder = mode === "login" ? "输入密码" : "至少 10 位";
+      passwordHelp.textContent = mode === "login" ? "请输入你的账号密码。" : "密码需为 10–128 位；建议使用 16 位以上的独立密码。";
       document.querySelector("#auth-status").textContent = "";
     });
   });
@@ -2007,7 +2033,9 @@ function bindAuth() {
     const username = document.querySelector("#auth-username").value.trim();
     const password = document.querySelector("#auth-password").value;
     const status = document.querySelector("#auth-status");
-    status.textContent = "正在连接 Neo4j 用户库...";
+    status.textContent = mode === "login" ? "正在登录…" : "正在创建账号…";
+    const submit = document.querySelector("#auth-submit");
+    submit.disabled = true;
     api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ username, password }) })
       .then((user) => {
         setUser(user);
@@ -2015,8 +2043,9 @@ function bindAuth() {
         location.hash = "#/chat";
       })
       .catch((error) => {
-        status.textContent = error.message || "登录失败，请确认 Neo4j 已启动。";
-      });
+        status.textContent = error.message || "操作失败，请稍后重试。";
+      })
+      .finally(() => { submit.disabled = false; });
   });
 }
 
@@ -2048,7 +2077,51 @@ function bindButtonMotion() {
   });
 }
 
-menuButton.addEventListener("click", () => sidebar.classList.toggle("open"));
+function openSidebar() {
+  sidebar.inert = false;
+  sidebar.removeAttribute("aria-hidden");
+  sidebar.classList.add("open");
+  document.body.classList.add("sidebar-open");
+  menuButton.setAttribute("aria-expanded", "true");
+  sidebar.querySelector("a, button")?.focus();
+}
+
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  document.body.classList.remove("sidebar-open");
+  menuButton.setAttribute("aria-expanded", "false");
+  syncSidebarAccessibility();
+}
+
+function syncSidebarAccessibility() {
+  const hiddenDrawer = window.matchMedia("(max-width: 1280px)").matches && !sidebar.classList.contains("open");
+  sidebar.inert = hiddenDrawer;
+  if (hiddenDrawer) sidebar.setAttribute("aria-hidden", "true");
+  else sidebar.removeAttribute("aria-hidden");
+}
+
+function loadSystemStatus() {
+  const status = document.querySelector("#system-status");
+  if (!status) return;
+  fetch("/api/health", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(6000) })
+    .then((response) => response.json().then((body) => ({ ok: response.ok && body.ok, body })))
+    .then(({ ok }) => {
+      status.innerHTML = `<span class="pulse ${ok ? "" : "offline"}"></span><span>${ok ? "服务运行正常" : "部分服务不可用"}</span>`;
+    })
+    .catch(() => { status.innerHTML = `<span class="pulse offline"></span><span>服务状态未知</span>`; });
+}
+
+menuButton.addEventListener("click", () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar());
+sidebarBackdrop.addEventListener("click", () => { menuButton.focus(); closeSidebar(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && sidebar.classList.contains("open")) { menuButton.focus(); closeSidebar(); }
+});
+window.addEventListener("resize", syncSidebarAccessibility);
+document.addEventListener("error", (event) => {
+  if (event.target instanceof HTMLImageElement && event.target.closest(".attachment-thumbnail")) {
+    event.target.closest(".attachment-thumbnail").remove();
+  }
+}, true);
 sidebarCollapseButton.addEventListener("click", () => {
   const collapsed = !appShell.classList.contains("sidebar-collapsed");
   localStorage.setItem("delta-force-sidebar-collapsed", String(collapsed));
@@ -2058,5 +2131,7 @@ window.addEventListener("hashchange", render);
 bindButtonMotion();
 applyTheme();
 applyLocale();
+syncSidebarAccessibility();
 render();
 loadSiteConfig();
+loadSystemStatus();

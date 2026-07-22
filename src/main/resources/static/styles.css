@@ -55,6 +55,27 @@ body {
     BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #fff;
+  background: #111;
+  transform: translateY(-150%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 55%, transparent);
+  outline-offset: 2px;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -346,6 +367,9 @@ textarea {
 
 .icon {
   width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
   color: var(--green);
   text-align: center;
 }
@@ -368,12 +392,13 @@ textarea {
   background: transparent;
 }
 
-.sidebar-panel > :not(#sidebar-user-area) {
-  display: none;
-}
-
 #sidebar-user-area {
   min-height: 40px;
+}
+
+.sidebar-panel .panel-label {
+  display: block;
+  margin-top: 18px;
 }
 
 .sidebar-user-card {
@@ -529,6 +554,16 @@ textarea {
   box-shadow: 0 0 0 6px rgba(82, 210, 115, 0.13);
 }
 
+.pulse.pending {
+  background: var(--amber);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--amber) 15%, transparent);
+}
+
+.pulse.offline {
+  background: var(--red);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--red) 15%, transparent);
+}
+
 .mini-meter {
   height: 6px;
   border-radius: 99px;
@@ -544,6 +579,12 @@ textarea {
 
 .main-area {
   min-width: 0;
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
+.sidebar-backdrop {
+  display: none;
 }
 
 .topbar {
@@ -566,6 +607,12 @@ textarea {
 
 .menu-button {
   display: none;
+}
+
+:root[data-theme="dark"] .menu-button {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 .top-actions {
@@ -2759,6 +2806,29 @@ button:focus-visible,
   gap: 14px;
 }
 
+.password-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.password-field input {
+  min-width: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.password-toggle {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
 .auth-tabs {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -2817,14 +2887,14 @@ button:focus-visible,
   min-height: calc(100vh - 142px);
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1280px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
 
   .sidebar {
     position: fixed;
-    z-index: 10;
+    z-index: 30;
     width: min(300px, 86vw);
     transform: translateX(-105%);
     transition: transform 180ms ease;
@@ -2838,11 +2908,30 @@ button:focus-visible,
     transform: translateX(0);
   }
 
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: rgba(0, 0, 0, 0.48);
+    cursor: pointer;
+  }
+
+  body.sidebar-open {
+    overflow: hidden;
+  }
+
+  body.sidebar-open .sidebar-backdrop {
+    display: block;
+  }
+
   .menu-button {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border: 1px solid var(--line);
     border-radius: 8px;
     color: var(--text);
@@ -2877,12 +2966,33 @@ button:focus-visible,
   .stat-bars {
     grid-template-columns: 1fr;
   }
+
+  .login-box {
+    order: -1;
+  }
 }
 
 @media (max-width: 720px) {
   .topbar,
   .view {
     padding: 16px;
+  }
+
+  .topbar {
+    min-height: 72px;
+    gap: 10px;
+  }
+
+  .topbar > div:nth-child(2) {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .topbar h1 {
+    overflow: hidden;
+    font-size: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .view.home-view {
@@ -2934,6 +3044,19 @@ button:focus-visible,
 
   .panel {
     padding: 12px;
+  }
+
+  .login-view {
+    min-height: auto;
+    gap: 18px;
+  }
+
+  .login-box {
+    padding: 20px;
+  }
+
+  .login-art h2 {
+    font-size: 32px;
   }
 
   .data-table {

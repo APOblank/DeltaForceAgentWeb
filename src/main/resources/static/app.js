@@ -812,9 +812,12 @@ function applyPendingConversationMetadata(pending, value) {
 
 function updatePendingReactTimeline(pending, event) {
   if (!event || event.type !== "react_event") return;
-  const existingIndex = pending.events.findIndex((item) => item.event_id === event.event_id);
-  if (existingIndex >= 0) pending.events[existingIndex] = event;
-  else pending.events.push(event);
+  pending.events = mergeReactEvent(pending.events, event);
+  const phase = String(event.phase || "");
+  if (event.status === "waiting_input" || phase === "supervisor_ask_user") pending.taskStatus = "awaiting_input";
+  else if (phase === "supervisor_fail") pending.taskStatus = "failed";
+  else if (phase === "supervisor_finish" || phase === "final_answer") pending.taskStatus = "completed";
+  else pending.taskStatus = "running";
   if (!pendingIsVisible(pending)) return;
   state.reactEvents = pending.events;
   state.selectedReactEventId = event.event_id;
@@ -829,7 +832,7 @@ function isGunModHandoff(events) {
   return (events || []).some((event) => {
     if ((event.status || "").toLowerCase() !== "running") return false;
     const text = `${event.title || ""} ${event.summary || ""} ${event.node || ""} ${JSON.stringify(event.payload || {})}`.toLowerCase();
-    return text.includes("intentagent") && text.includes("gunmodagent");
+    return (text.includes("supervisor") || text.includes("intentagent")) && text.includes("gunmodagent");
   });
 }
 
@@ -918,7 +921,7 @@ function openGunModifierFromReply(messageId) {
 
 function normalizeReactEvents(value) {
   if (Array.isArray(value)) {
-    return value;
+    return value.reduce((events, event) => mergeReactEvent(events, event), []);
   }
   if (!value) {
     return [];
@@ -926,7 +929,7 @@ function normalizeReactEvents(value) {
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.reduce((events, event) => mergeReactEvent(events, event), []) : [];
     } catch {
       return [];
     }
@@ -934,9 +937,26 @@ function normalizeReactEvents(value) {
   return [];
 }
 
+function mergeReactEvent(events, event) {
+  if (!event || event.type !== "react_event") return Array.isArray(events) ? events : [];
+  const merged = Array.isArray(events) ? [...events] : [];
+  const identity = event.event_id || `${event.run_id || "legacy"}:${event.sequence ?? ""}:${event.phase || ""}`;
+  const existingIndex = merged.findIndex((item) => (item.event_id || `${item.run_id || "legacy"}:${item.sequence ?? ""}:${item.phase || ""}`) === identity);
+  if (existingIndex >= 0) merged[existingIndex] = event;
+  else merged.push(event);
+  merged.sort((left, right) => {
+    const leftSequence = Number(left.sequence);
+    const rightSequence = Number(right.sequence);
+    if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence)) return leftSequence - rightSequence;
+    return Number(left.created_at || 0) - Number(right.created_at || 0);
+  });
+  return merged;
+}
+
 function phaseName(phase) {
   const names = {
     workspace_ready: "工作区准备",
+    memory_retrieval: "读取上下文",
     task_plan_ready: "任务拆解",
     agent_plan: "Agent 计划",
     handoff: "Agent 交接",
@@ -946,18 +966,18 @@ function phaseName(phase) {
     agent_result: "Agent 完成",
     agent_update: "状态更新",
     final_answer: "最终回答",
+    supervisor_dispatch: "Supervisor 调度",
+    supervisor_retry: "Supervisor 重试",
+    supervisor_ask_user: "等待用户输入",
+    supervisor_finish: "Supervisor 完成",
+    supervisor_fail: "Supervisor 终止",
   };
   return names[phase] || phase || "事件";
 }
 
 function updateReactTimeline(event) {
   if (!event || event.type !== "react_event") return;
-  const existingIndex = state.reactEvents.findIndex((item) => item.event_id === event.event_id);
-  if (existingIndex >= 0) {
-    state.reactEvents[existingIndex] = event;
-  } else {
-    state.reactEvents.push(event);
-  }
+  state.reactEvents = mergeReactEvent(state.reactEvents, event);
   if (state.selectedReactMessageId) {
     state.messageReactEvents[state.selectedReactMessageId] = state.reactEvents;
     const reply = state.gunModReplies[state.selectedReactMessageId] || { content: "", events: [] };
@@ -1051,16 +1071,17 @@ function renderReactTimeline() {
     detail.innerHTML = `<div class="empty-state compact">点击事件查看 payload JSON。</div>`;
     return;
   }
-  if (summary) summary.textContent = `${state.reactEvents.length} 个执行事件`;
+  const latest = state.reactEvents[state.reactEvents.length - 1];
+  if (summary) summary.textContent = `${state.reactEvents.length} 个事件 · ${statusName(latest?.status)} · ${phaseName(latest?.phase)}`;
   timeline.innerHTML = state.reactEvents.map((event, index) => `
     <button class="react-event ${event.status || "running"} ${event.event_id === state.selectedReactEventId ? "active" : ""}" type="button" data-react-id="${escapeHtml(event.event_id)}" aria-pressed="${event.event_id === state.selectedReactEventId}">
       <span class="react-event-marker" aria-hidden="true">
         <span class="react-dot"></span>
-        <span class="react-event-index">${index + 1}</span>
+        <span class="react-event-index">${escapeHtml(String(event.sequence || index + 1))}</span>
       </span>
       <span class="react-event-content">
         <strong>${escapeHtml(event.title || phaseName(event.phase))}</strong>
-        <small>${escapeHtml(phaseName(event.phase))}${event.node ? ` · ${escapeHtml(event.node)}` : ""}</small>
+        <small>${escapeHtml(phaseName(event.phase))}${event.node ? ` · ${escapeHtml(event.node)}` : ""}${event.task_id ? ` · ${escapeHtml(event.task_id)}` : ""}${event.attempt ? ` · 第 ${escapeHtml(String(event.attempt))} 次` : ""}</small>
         ${event.summary ? `<em>${escapeHtml(event.summary)}</em>` : ""}
       </span>
     </button>
@@ -1075,11 +1096,24 @@ function renderReactTimeline() {
   detail.innerHTML = `
     <div class="react-detail-head">
       <strong>${escapeHtml(selected.title || phaseName(selected.phase))}</strong>
-      <span class="react-status ${selected.status || "running"}">${escapeHtml(selected.status || "running")}</span>
+      <span class="react-status ${selected.status || "running"}">${escapeHtml(statusName(selected.status))}</span>
     </div>
     <p>${escapeHtml(selected.summary || "")}</p>
     <pre>${escapeHtml(JSON.stringify(selected.payload || {}, null, 2))}</pre>
   `;
+}
+
+function statusName(status) {
+  const names = {
+    running: "执行中",
+    success: "已完成",
+    retrying: "重试中",
+    waiting_input: "等待输入",
+    warning: "部分完成",
+    error: "失败",
+    cancelled: "已取消",
+  };
+  return names[status] || status || "执行中";
 }
 
 function reactLogText(events) {
@@ -1125,6 +1159,9 @@ function exportReactLog() {
 
 async function streamChat(pending, messageId, conversationMode) {
   const token = state.user?.token;
+  const controller = new AbortController();
+  pending.abortController = controller;
+  const timeoutId = window.setTimeout(() => controller.abort("智能体请求超时"), 140000);
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -1135,6 +1172,7 @@ async function streamChat(pending, messageId, conversationMode) {
       conversationMode,
       reactEvents: true,
     }),
+    signal: controller.signal,
   });
   if (!response.ok || !response.body) {
     let errorBody = null;
@@ -1149,19 +1187,25 @@ async function streamChat(pending, messageId, conversationMode) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let sawDone = false;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split(/\r?\n\r?\n/);
-    buffer = parts.pop() || "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || "";
 
-    for (const part of parts) {
+      for (const part of parts) {
       const dataLines = part.split(/\r?\n/).filter((line) => line.startsWith("data:"));
       if (!dataLines.length) continue;
       const raw = dataLines.map((line) => line.slice("data:".length).trim()).join("\n");
-      if (!raw || raw === "[DONE]") continue;
+      if (!raw) continue;
+      if (raw === "[DONE]") {
+        sawDone = true;
+        continue;
+      }
 
       const chunk = JSON.parse(raw);
       if (chunk.sessionId) {
@@ -1195,9 +1239,14 @@ async function streamChat(pending, messageId, conversationMode) {
           refreshPendingChat(pending);
         }
       }
+      }
     }
+  } finally {
+    window.clearTimeout(timeoutId);
+    delete pending.abortController;
   }
 
+  if (!sawDone) throw new Error("智能体流式响应意外中断");
   if (!pending.content) pending.content = "后端没有返回内容";
   pending.status = "completed";
   refreshPendingChat(pending);

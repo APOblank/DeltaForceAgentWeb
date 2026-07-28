@@ -112,18 +112,22 @@ public class ChatProxyService {
                             continue;
                         }
                         streamStarted[0] = true;
-                        emitter.send(SseEmitter.event().name("chunk").data(raw));
                         if ("[DONE]".equals(raw)) {
                             sawDone[0] = true;
                             break;
                         }
+                        Map<String, Object> reactEvent = extractReactEvent(raw);
+                        SseEmitter.SseEventBuilder outgoing = SseEmitter.event().name("chunk").data(raw);
+                        if (reactEvent != null && reactEvent.get("event_id") != null) {
+                            outgoing.id(String.valueOf(reactEvent.get("event_id")));
+                        }
+                        emitter.send(outgoing);
                         if (extractDeltaError(raw) != null) {
                             streamFailed[0] = true;
                         }
                         answer.append(extractDeltaContent(raw));
-                        Map<String, Object> reactEvent = extractReactEvent(raw);
                         if (reactEvent != null) {
-                            collectedReactEvents.add(reactEvent);
+                            upsertReactEvent(collectedReactEvents, reactEvent);
                         }
                     }
                     return null;
@@ -155,6 +159,9 @@ public class ChatProxyService {
                     saved.put("assistantMessageId", assistantMessageId);
                     emitter.send(SseEmitter.event().name("assistant_saved").data(objectMapper.writeValueAsString(saved)));
                 }
+            }
+            if (sawDone[0]) {
+                emitter.send(SseEmitter.event().name("chunk").data("[DONE]"));
             }
             emitter.complete();
         } catch (Exception ex) {
@@ -214,6 +221,7 @@ public class ChatProxyService {
     private HttpHeaders buildHeaders(String userId, String requestId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON));
         if (StringUtils.hasText(properties.getFastapi().getApiKey())) {
             headers.setBearerAuth(properties.getFastapi().getApiKey());
         }
@@ -322,6 +330,37 @@ public class ChatProxyService {
         }
     }
 
+    private void upsertReactEvent(List<Map<String, Object>> events, Map<String, Object> event) {
+        String eventId = event.get("event_id") == null ? "" : String.valueOf(event.get("event_id"));
+        if (StringUtils.hasText(eventId)) {
+            for (int index = 0; index < events.size(); index++) {
+                if (eventId.equals(String.valueOf(events.get(index).get("event_id")))) {
+                    events.set(index, event);
+                    sortReactEvents(events);
+                    return;
+                }
+            }
+        }
+        events.add(event);
+        sortReactEvents(events);
+    }
+
+    private void sortReactEvents(List<Map<String, Object>> events) {
+        events.sort((left, right) -> Long.compare(eventSequence(left), eventSequence(right)));
+    }
+
+    private long eventSequence(Map<String, Object> event) {
+        Object value = event.get("sequence");
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (Exception ignored) {
+            return Long.MAX_VALUE;
+        }
+    }
+
     private AgentApiException toAgentException(RestClientException ex, String fallbackRequestId) {
         if (ex instanceof HttpStatusCodeException statusError) {
             int status = statusError.getStatusCode().value();
@@ -401,7 +440,7 @@ public class ChatProxyService {
             Map<String, Object> choice = new HashMap<String, Object>();
             choice.put("index", 0);
             choice.put("delta", delta);
-            choice.put("finish_reason", "stop");
+            choice.put("finish_reason", "error");
             Map<String, Object> chunk = new HashMap<String, Object>();
             chunk.put("choices", List.of(choice));
             if (StringUtils.hasText(failure.getRequestId())) {

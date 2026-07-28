@@ -71,6 +71,19 @@ class FrontendContractTest {
         assertTrue(css.contains("min-height: 48px"));
     }
 
+    @Test
+    void reactTimelineSupportsVersionedOrderedSupervisorEvents() throws IOException {
+        String app = resource("static/app.js");
+        String css = resource("static/styles.css");
+
+        assertTrue(app.contains("function mergeReactEvent(events, event)"));
+        assertTrue(app.contains("supervisor_retry: \"Supervisor 重试\""));
+        assertTrue(app.contains("event.sequence"));
+        assertTrue(app.contains("let sawDone = false"));
+        assertTrue(css.contains(".react-event.retrying .react-dot"));
+        assertTrue(css.contains(".react-status.waiting_input"));
+    }
+
     private String resource(String path) throws IOException {
         return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
     }

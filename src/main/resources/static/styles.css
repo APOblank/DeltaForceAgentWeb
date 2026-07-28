@@ -1838,6 +1838,12 @@ body::before {
   background: var(--red);
 }
 
+.react-event.retrying .react-dot,
+.react-event.warning .react-dot,
+.react-event.waiting_input .react-dot {
+  background: var(--amber);
+}
+
 .react-event strong,
 .react-event small,
 .react-event em {
@@ -1920,6 +1926,13 @@ body::before {
 .react-status.error {
   color: var(--red);
   background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.react-status.retrying,
+.react-status.warning,
+.react-status.waiting_input {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
 }
 
 .messages {

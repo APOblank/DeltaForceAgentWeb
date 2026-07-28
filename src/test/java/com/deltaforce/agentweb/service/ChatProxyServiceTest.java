@@ -49,6 +49,7 @@ class ChatProxyServiceTest {
         server.expect(requestTo("http://agent-api:8000/v1/chat/completions"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Authorization", "Bearer service-secret"))
+                .andExpect(header("Accept", "text/event-stream, application/json"))
                 .andExpect(header("X-User-ID", "user-1"))
                 .andExpect(header("X-Request-ID", "java-request-1"))
                 .andExpect(jsonPath("$.user").doesNotExist())
